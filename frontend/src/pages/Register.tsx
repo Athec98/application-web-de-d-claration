@@ -1,17 +1,20 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
+import { authService } from "@/services/authService";
 
 export default function Register() {
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
+    firstName: "",
+    lastName: "",
     name: "",
-    phoneNumber: "",
+    phone: "",
     email: "",
     address: "",
     password: "",
@@ -43,13 +46,58 @@ export default function Register() {
     setLoading(true);
 
     try {
-      // TODO: Implémenter l'inscription avec l'API
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { confirmPassword, ...userData } = formData;
       
-      toast.success("Inscription réussie ! Vérifiez votre email/téléphone pour le code OTP.");
-      setLocation("/verify-otp");
-    } catch (error) {
-      toast.error("Erreur lors de l'inscription");
+      const response = await authService.register({
+        ...userData,
+        name: `${userData.firstName} ${userData.lastName}`.trim()
+      });
+      
+      // Vérifier la réponse du serveur
+      console.log('Réponse complète du serveur:', response);
+      
+      // Vérifier si la réponse contient des données
+      if (!response || !response.data) {
+        console.error('Réponse du serveur invalide:', response);
+        throw new Error("Réponse du serveur invalide. Veuillez réessayer.");
+      }
+      
+      const responseData = response.data;
+      console.log('Données de la réponse:', responseData);
+      
+      // Vérifier si c'est le message indiquant que l'utilisateur existe déjà
+      if (responseData.message && responseData.message.includes('Si votre email est valable')) {
+        console.log('L\'utilisateur existe déjà, redirection vers la page de connexion');
+        toast.info('Un compte existe déjà avec cet email. Veuillez vous connecter.');
+        navigate('/login');
+        return;
+      }
+      
+      // Récupérer l'ID utilisateur depuis différentes parties possibles de la réponse
+      const userId = responseData.userId || 
+                   responseData.user?._id || 
+                   responseData.user?.id ||
+                   (responseData.user && responseData.user.id);
+      
+      console.log('ID utilisateur extrait:', userId);
+      
+      if (!userId) {
+        console.error('ID utilisateur manquant dans la réponse:', responseData);
+        throw new Error("Erreur lors de la création du compte. Veuillez réessayer ou contacter le support.");
+      }
+      
+      // Stocker l'ID dans le localStorage
+      localStorage.setItem('tempUserId', userId);
+      console.log('ID utilisateur stocké dans le localStorage:', userId);
+      
+      toast.success("Inscription réussie ! Vérifiez votre email pour le code OTP.");
+      navigate('/verify-otp');
+    } catch (error: any) {
+      console.error('Erreur inscription:', error);
+      const errorMessage = error.response?.data?.message || 
+                         error.message || 
+                         "Erreur lors de l'inscription";
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -84,27 +132,41 @@ export default function Register() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Nom complet *</Label>
-                <Input
-                  id="name"
-                  name="name"
-                  type="text"
-                  placeholder="Prénom Nom"
-                  value={formData.name}
-                  onChange={handleChange}
-                  required
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">Prénom *</Label>
+                  <Input
+                    id="firstName"
+                    name="firstName"
+                    type="text"
+                    placeholder="Prénom"
+                    value={formData.firstName}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Nom *</Label>
+                  <Input
+                    id="lastName"
+                    name="lastName"
+                    type="text"
+                    placeholder="Nom"
+                    value={formData.lastName}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="phoneNumber">Numéro de téléphone *</Label>
+                <Label htmlFor="phone">Numéro de téléphone *</Label>
                 <Input
-                  id="phoneNumber"
-                  name="phoneNumber"
+                  id="phone"
+                  name="phone"
                   type="tel"
                   placeholder="+221 XX XXX XX XX"
-                  value={formData.phoneNumber}
+                  value={formData.phone}
                   onChange={handleChange}
                   required
                 />
@@ -192,9 +254,10 @@ export default function Register() {
             <div className="mt-4 text-center text-sm text-gray-600">
               Vous avez déjà un compte ?{" "}
               <Button 
+                type="button" 
                 variant="link" 
-                className="text-senegal-green p-0"
-                onClick={() => setLocation("/login")}
+                className="text-green-600 hover:text-green-700"
+                onClick={() => navigate('/login')}
               >
                 Se connecter
               </Button>

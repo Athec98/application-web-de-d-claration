@@ -1,14 +1,16 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { authService } from "@/services/authService";
+import { ROLES, ROLE_REDIRECTS } from "@/config/roles";
 
 export default function Login() {
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
   const [userType, setUserType] = useState<"parent" | "mairie" | "hopital">("parent");
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -16,25 +18,57 @@ export default function Login() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validation des champs
+    if (!identifier || !password) {
+      toast.error("Veuillez remplir tous les champs");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // TODO: Implémenter la vraie connexion avec l'API
-      // Pour l'instant, simulation avec redirection selon le type
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('Tentative de connexion avec:', { identifier });
       
-      toast.success("Connexion réussie !");
+      // Appel au service d'authentification
+      const response = await authService.login(identifier, password);
       
-      // Redirection selon le rôle
-      if (userType === "parent") {
-        setLocation("/dashboard");
-      } else if (userType === "mairie") {
-        setLocation("/mairie/dashboard");
-      } else if (userType === "hopital") {
-        setLocation("/hopital/dashboard");
+      // Vérifier la réponse de connexion
+      if (response.token && response.user) {
+        // Stocker le token et les informations utilisateur
+        localStorage.setItem('token', response.token);
+        localStorage.setItem('user', JSON.stringify(response.user));
+        
+        // Récupérer le rôle depuis la réponse
+        const userRole = response.user.role as keyof typeof ROLE_REDIRECTS || ROLES.PARENT;
+        
+        toast.success("Connexion réussie !");
+        console.log('Utilisateur connecté:', response.user);
+        
+        // Obtenir l'URL de redirection en fonction du rôle
+        const redirectPath = ROLE_REDIRECTS[userRole] || ROLE_REDIRECTS[ROLES.PARENT];
+        console.log(`Redirection vers ${redirectPath} pour le rôle ${userRole}`);
+        
+        // Utiliser navigate pour la redirection
+        navigate(redirectPath, { replace: true });
+      } else {
+        throw new Error("Réponse de connexion invalide");
       }
-    } catch (error) {
-      toast.error("Erreur de connexion. Vérifiez vos identifiants.");
+    } catch (error: any) {
+      console.error('Erreur de connexion complète:', error);
+      
+      // Gestion des erreurs
+      if (error.requiresVerification) {
+        // Rediriger vers la page de vérification OTP si nécessaire
+        const userId = error.userId || '';
+        console.log('Redirection vers la page de vérification OTP pour l\'utilisateur:', userId);
+        navigate(`/verify-otp?userId=${userId}`, { replace: true });
+      } else {
+        // Afficher le message d'erreur à l'utilisateur
+        const errorMessage = error.message || "Erreur de connexion. Veuillez réessayer.";
+        console.error('Erreur de connexion:', errorMessage);
+        toast.error(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -84,12 +118,12 @@ export default function Login() {
               {/* Champ identifiant */}
               <div className="space-y-2">
                 <Label htmlFor="identifier">
-                  {userType === "parent" ? "Email ou Numéro de téléphone" : "Email"}
+                  Email *
                 </Label>
                 <Input
                   id="identifier"
-                  type={userType === "parent" ? "text" : "email"}
-                  placeholder={userType === "parent" ? "exemple@email.com ou +221 XX XXX XX XX" : "exemple@email.com"}
+                  type="email"
+                  placeholder="exemple@email.com"
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
                   required
@@ -110,14 +144,33 @@ export default function Login() {
               </div>
 
               {/* Bouton de connexion - BIEN VISIBLE */}
-              <Button 
-                type="submit" 
-                className="w-full text-white font-semibold"
-                style={{ backgroundColor: "#00853F" }}
-                disabled={loading}
-              >
-                {loading ? "Connexion en cours..." : "Se connecter"}
-              </Button>
+              <div className="pt-2">
+                <Button 
+                  type="submit" 
+                  className="w-full text-white font-semibold py-2"
+                  style={{ 
+                    backgroundColor: "#00853F",
+                    height: '44px',
+                    fontSize: '1rem',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    opacity: loading ? 0.7 : 1
+                  }}
+                  disabled={loading}
+                >
+                  {loading ? "Connexion en cours..." : "Se connecter"}
+                </Button>
+              </div>
+              
+              <div className="text-center text-sm text-gray-600 mt-4">
+                <Button 
+                  type="button" 
+                  variant="link" 
+                  className="text-green-600 hover:text-green-700"
+                  onClick={() => navigate('/register')}
+                >
+                  S'inscrire
+                </Button>
+              </div>
             </form>
 
             <div className="mt-4 text-center space-y-2">
@@ -137,7 +190,7 @@ export default function Login() {
                       variant="link" 
                       className="p-0 font-semibold"
                       style={{ color: "#00853F" }}
-                      onClick={() => setLocation("/register")}
+                      onClick={() => navigate("/register")}
                     >
                       S'inscrire
                     </Button>
@@ -146,10 +199,9 @@ export default function Login() {
               )}
               
               {(userType === "mairie" || userType === "hopital") && (
-                <p className="text-sm text-gray-500 mt-4">
-                  Les comptes Mairie et Hôpital sont créés par l'administrateur.
-                </p>
-              )}
+                <p className="text-sm text-gray-500 mt-4"></p>
+              )
+              }
             </div>
           </CardContent>
         </Card>

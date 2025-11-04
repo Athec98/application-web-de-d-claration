@@ -81,4 +81,25 @@ const admin = (req, res, next) => {
   }
 };
 
-module.exports = { auth, admin };
+// Middleware pour vérifier les rôles
+authorize = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Non autorisé - utilisateur non authentifié'
+      });
+    }
+
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: `Le rôle ${req.user.role} n'est pas autorisé à accéder à cette ressource`
+      });
+    }
+
+    next();
+  };
+};
+
+module.exports = { auth, admin, authorize };

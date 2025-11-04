@@ -1,0 +1,234 @@
+const User = require('../models/User');
+const jwt = require('jsonwebtoken');
+const { validationResult } = require('express-validator');
+const { sendVerificationEmail } = require('../services/emailService');
+
+// === Générer un token JWT ===
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: '30d'
+  });
+};
+
+// === Générer un code OTP ===
+const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// === Inscription d'un parent ===
+exports.register = async (req, res) => {
+  try {
+    const { name, firstName, lastName, email, phone, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Veuillez fournir un email et un mot de passe'
+      });
+    }
+
+    // Vérifier si l'utilisateur existe déjà
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cet email est déjà utilisé'
+      });
+    }
+
+    // Créer un nouvel utilisateur
+    const user = new User({
+      name,
+      firstName,
+      lastName,
+      email,
+      phone,
+      role: 'parent',
+      isVerified: false,
+      otp: generateOTP(),
+      otpExpire: Date.now() + 10 * 60 * 1000 // expire dans 10 min
+    });
+
+    await user.setPassword(password);
+    await user.save();
+
+    // === Envoi de l'OTP par email ===
+    try {
+      await sendVerificationEmail(user.email, user.otp, user._id);
+    } catch (err) {
+      console.error('Erreur envoi email OTP :', err);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Inscription réussie. Veuillez vérifier votre email pour le code OTP.',
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        role: user.role,
+        isVerified: user.isVerified
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Erreur serveur lors de l\'inscription' });
+  }
+};
+
+// === Vérification du code OTP ===
+exports.verifyOTP = async (req, res) => {
+  try {
+    const { userId, otp } = req.body;
+
+    if (!userId || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID utilisateur et code OTP sont requis'
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cet utilisateur est déjà vérifié'
+      });
+    }
+
+    if (user.otp !== otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Code OTP invalide'
+      });
+    }
+
+    if (user.otpExpire < Date.now()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le code OTP a expiré. Veuillez en demander un nouveau.'
+      });
+    }
+
+    // Validation réussie
+    user.isVerified = true;
+    user.otp = undefined;
+    user.otpExpire = undefined;
+    await user.save();
+
+    const token = generateToken(user._id);
+
+    res.json({
+      success: true,
+      message: 'Email vérifié avec succès',
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        role: user.role,
+        isVerified: user.isVerified
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Erreur serveur lors de la vérification du code OTP' });
+  }
+};
+
+// === Connexion ===
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Veuillez fournir un email et un mot de passe'
+      });
+    }
+
+    // Vérifier l'utilisateur et le mot de passe
+    const user = await User.findOne({ email }).select('+password');
+    
+    if (!user || !(await user.matchPassword(password))) {
+      return res.status(401).json({
+        success: false,
+        message: 'Email ou mot de passe incorrect'
+      });
+    }
+
+    // Vérifier si le compte est vérifié
+    if (!user.isVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Veuvez vérifier votre email avant de vous connecter',
+        requiresVerification: true,
+        userId: user._id
+      });
+    }
+
+    // Générer le token JWT
+    const token = generateToken(user._id);
+
+    // Réponse avec le token et les informations de l'utilisateur
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        role: user.role,
+        isVerified: user.isVerified
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la connexion'
+    });
+  }
+};
+
+// === Récupérer l'utilisateur connecté ===
+exports.getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password -otp -otpExpire');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        role: user.role,
+        isVerified: user.isVerified
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la récupération du profil'
+    });
+  }
+};

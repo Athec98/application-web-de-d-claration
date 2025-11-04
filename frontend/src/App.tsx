@@ -1,11 +1,12 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import VerifyOtp from "./pages/VerifyOtp";
 import ParentDashboard from "./pages/ParentDashboard";
 import ParentProfile from "./pages/ParentProfile";
 import NewDeclaration from "./pages/NewDeclaration";
@@ -14,24 +15,84 @@ import MairieDashboard from "./pages/MairieDashboard";
 import MairieDeclarationDetail from "./pages/MairieDeclarationDetail";
 import HopitalDashboard from "./pages/HopitalDashboard";
 import HopitalVerificationDetail from "./pages/HopitalVerificationDetail";
+import { ROLES, UserRole } from "./config/roles";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
+import { useEffect } from "react";
 
-function Router() {
+
+function AppRouter() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  // Redirection si l'utilisateur est déjà connecté
+  useEffect(() => {
+    if ((location.pathname === '/' || location.pathname === '/login' || location.pathname === '/register') && 
+        localStorage.getItem('token')) {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const redirectPath = user.role === ROLES.MAIRIE ? '/mairie/dashboard' : 
+                         user.role === ROLES.HOPITAL ? '/hopital/dashboard' : '/dashboard';
+      navigate(redirectPath);
+    }
+  }, [location, navigate]);
+
   return (
-    <Switch>
-      <Route path={"/"} component={Login} />
-      <Route path={"/login"} component={Login} />
-      <Route path={"/register"} component={Register} />
-      <Route path={"/dashboard"} component={ParentDashboard} />
-      <Route path={"/profile"} component={ParentProfile} />
-      <Route path={"/new-declaration"} component={NewDeclaration} />
-      <Route path={"/edit-declaration/:id"} component={EditDeclaration} />
-      <Route path={"/mairie/dashboard"} component={MairieDashboard} />
-      <Route path={"/mairie/declaration/:id"} component={MairieDeclarationDetail} />
-      <Route path={"/hopital/dashboard"} component={HopitalDashboard} />
-      <Route path={"/hopital/verification/:id"} component={HopitalVerificationDetail} />
-      <Route path={"/404"} component={NotFound} />
-      <Route component={NotFound} />
-    </Switch>
+    <Routes>
+      {/* Routes publiques */}
+      <Route path="/" element={<Login />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/verify-otp" element={<VerifyOtp />} />
+      
+      {/* Routes protégées pour les parents */}
+      <Route path="/dashboard" element={
+        <ProtectedRoute allowedRoles={[ROLES.PARENT, ROLES.ADMIN]}>
+          <ParentDashboard />
+        </ProtectedRoute>
+      } />
+      <Route path="/profile" element={
+        <ProtectedRoute allowedRoles={[ROLES.PARENT, ROLES.ADMIN]}>
+          <ParentProfile />
+        </ProtectedRoute>
+      } />
+      <Route path="/new-declaration" element={
+        <ProtectedRoute allowedRoles={[ROLES.PARENT, ROLES.ADMIN]}>
+          <NewDeclaration />
+        </ProtectedRoute>
+      } />
+      <Route path="/edit-declaration/:id" element={
+        <ProtectedRoute allowedRoles={[ROLES.PARENT, ROLES.ADMIN]}>
+          <EditDeclaration />
+        </ProtectedRoute>
+      } />
+      
+      {/* Routes protégées pour la mairie */}
+      <Route path="/mairie/dashboard" element={
+        <ProtectedRoute allowedRoles={[ROLES.MAIRIE, ROLES.ADMIN]}>
+          <MairieDashboard />
+        </ProtectedRoute>
+      } />
+      <Route path="/mairie/declaration/:id" element={
+        <ProtectedRoute allowedRoles={[ROLES.MAIRIE, ROLES.ADMIN]}>
+          <MairieDeclarationDetail />
+        </ProtectedRoute>
+      } />
+      
+      {/* Routes protégées pour l'hôpital */}
+      <Route path="/hopital/dashboard" element={
+        <ProtectedRoute allowedRoles={[ROLES.HOPITAL, ROLES.ADMIN]}>
+          <HopitalDashboard />
+        </ProtectedRoute>
+      } />
+      <Route path="/hopital/verification/:id" element={
+        <ProtectedRoute allowedRoles={[ROLES.HOPITAL, ROLES.ADMIN]}>
+          <HopitalVerificationDetail />
+        </ProtectedRoute>
+      } />
+      
+      {/* 404 et routes inconnues */}
+      <Route path="/404" element={<NotFound />} />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
   );
 }
 
@@ -48,8 +109,8 @@ function App() {
         // switchable
       >
         <TooltipProvider>
+          <AppRouter />
           <Toaster />
-          <Router />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

@@ -1,0 +1,70 @@
+🧾 Fonctionnement de l’application CIVILE-APP
+👨👩👧 1. Inscription du parent
+Le parent crée un compte en renseignant :
+•	Nom
+•	Prénom
+•	Numéro de téléphone
+•	Adresse
+•	Email (optionnel)
+•	Mot de passe et confirmation du mot de passe
+•	Il  peut  aussi modifier sa profile 
+📩 Après l’inscription, un mail ou un code OTP est envoyé pour activer le compte.
+________________________________________
+🔐 2. Connexion du parent
+Une fois le compte activé, le parent peut se connecter :
+•	soit avec son email et mot de passe
+•	soit avec son numéro de téléphone et mot de passe
+________________________________________
+🍼 3. Déclaration de naissance
+Après connexion, le parent peut effectuer une déclaration de naissance en remplissant les informations suivantes :
+Informations du père
+•	Nom
+•	Prénom
+•	Numéro d’identification
+Informations de la mère
+•	Nom
+•	Prénom
+•	Numéro d’identification
+Informations de l’enfant
+•	Nom de l’enfant
+•	Sexe
+•	Date de naissance
+•	Hôpital de naissance
+Adresse du domicile
+•	Adresse complète du parent
+Pièces justificatives à téléverser
+•	Certificat d’accouchement fourni par l’hôpital
+•	Photos des cartes d’identité des parents
+•	Autres documents justificatifs si nécessaire
+•	Le  parent  peut  aussi  modifier  une   déclaration  en d’erreur 
+________________________________________
+🏛️ 4. Rôle de la mairie
+La mairie reçoit la demande de déclaration.
+Elle consulte le dossier et vérifie s’il est complet et conforme :
+•	✅ Si conforme → elle envoie une demande de vérification du certificat d’accouchement à l’hôpital.
+•	❌ Si non conforme → elle bloque la demande et notifie le parent avec un motif de blocage.
+________________________________________
+🏥 5. Vérification par l’hôpital
+L’hôpital reçoit la demande de vérification du certificat d’accouchement et vérifie son authenticité :
+•	✅ Si le certificat est valide, l’hôpital renvoie une réponse positive à la mairie.
+→ Le statut de la demande passe de “En cours” à “En attente”.
+•	❌ Si le certificat n’est pas conforme, l’hôpital le signale à la mairie.
+→ Le statut passe à “Rejeté” et le parent est notifié du rejet et du motif.
+________________________________________
+📜 6. Validation et fabrication de l’acte de naissance
+Si la vérification est positive :
+•	La mairie fabrique l’acte de naissance.
+•	Elle notifie le parent.
+•	Le statut passe de “En attente” à “Validé”.
+________________________________________
+💰 7. Téléchargement de l’acte de naissance
+Le parent peut télécharger l’acte de naissance, mais chaque téléchargement coûte 250 F CFA (frais de timbre).
+•	Le paiement se fait via Wave ou Orange Money.
+•	Chaque téléchargement = 250 F CFA, mais il peut le faire autant de fois qu’il le souhaite.
+________________________________________
+🧾 8. Demandes supplémentaires
+Une fois qu’il possède son acte de naissance, le parent peut aussi faire d’autres demandes, comme :
+•	Extrait de naissance
+•	Autres documents administratifs liés à l’état civil
+
+	

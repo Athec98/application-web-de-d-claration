@@ -58,43 +58,71 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Méthode pour définir le mot de passe (hachage automatique)
+// Méthode pour définir et hacher le mot de passe
 userSchema.methods.setPassword = async function(password) {
   if (password) {
-    const salt = await bcrypt.genSalt(10);
-    this.passwordHash = await bcrypt.hash(password, salt);
+    this.passwordHash = password; // Le hachage sera fait par le pre-save
+    return this.save(); // Sauvegarder pour déclencher le pre-save
   }
+  return Promise.resolve(this);
 };
 
 // Méthode pour vérifier le mot de passe
 userSchema.methods.matchPassword = async function(enteredPassword) {
-  if (!enteredPassword || !this.passwordHash) {
+  if (!enteredPassword) {
+    console.log('Aucun mot de passe fourni pour la comparaison');
+    return false;
+  }
+  
+  if (!this.passwordHash) {
+    console.log('Aucun mot de passe hashé trouvé pour cet utilisateur');
     return false;
   }
   
   try {
-    return await bcrypt.compare(enteredPassword, this.passwordHash);
+    console.log('Comparaison des mots de passe...');
+    console.log('Type de passwordHash:', typeof this.passwordHash);
+    console.log('Longueur de passwordHash:', this.passwordHash.length);
+    
+    const isMatch = await bcrypt.compare(enteredPassword, this.passwordHash);
+    console.log('Résultat de la comparaison:', isMatch);
+    
+    if (!isMatch) {
+      console.log('Le mot de passe fourni ne correspond pas au hash stocké');
+      // Pour le débogage, vérifions si le mot de passe est le même que le hash
+      const isSameString = enteredPassword === this.passwordHash;
+      console.log('Le mot de passe est-il égal au hash?', isSameString);
+    }
+    
+    return isMatch;
   } catch (error) {
-    console.error('Erreur lors de la comparaison des mots de passe:', error);
+    console.error('Erreur lors de la comparaison des mots de passe:', {
+      error: error.message,
+      stack: error.stack
+    });
     return false;
   }
 };
 
 // Middleware pour hacher le mot de passe avant de sauvegarder
 userSchema.pre('save', async function(next) {
-  // Ne pas hacher le mot de passe s'il n'a pas été modifié
+  // Ne hacher le mot de passe que s'il a été modifié
   if (!this.isModified('passwordHash')) {
     return next();
   }
   
-  // Si le mot de passe est modifié, le hacher
-  if (this.password) {
-    await this.setPassword(this.password);
-    // Ne pas conserver le mot de passe en clair
-    this.password = undefined;
+  try {
+    if (this.passwordHash && !this.passwordHash.startsWith('$2a$')) {
+      console.log('Hachage du mot de passe...');
+      const salt = await bcrypt.genSalt(10);
+      this.passwordHash = await bcrypt.hash(this.passwordHash, salt);
+      console.log('Mot de passe haché avec succès');
+    }
+    next();
+  } catch (error) {
+    console.error('Erreur lors du hachage du mot de passe:', error);
+    next(error);
   }
-  
-  next();
 });
 
 // Méthode pour obtenir le nom complet
