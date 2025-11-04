@@ -1,4 +1,4 @@
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ROLES, hasRole, UserRole } from '@/config/roles';
 import { useEffect } from 'react';
 

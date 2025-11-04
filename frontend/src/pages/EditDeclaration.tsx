@@ -37,6 +37,7 @@ export default function EditDeclaration() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/edit-declaration/:id");
   const [loading, setLoading] = useState(false);
+  const currentDeclarationId = params?.id ?? String(mockRejectedDeclaration.id);
   
   const [formData, setFormData] = useState({
     childFirstName: mockRejectedDeclaration.childFirstName,
@@ -102,22 +103,22 @@ export default function EditDeclaration() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center space-x-4">
-            <Button 
-              variant="ghost" 
-              size="icon"
-              onClick={() => setLocation("/dashboard")}
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div>
-              <h1 className="text-xl font-bold" style={{ color: "#006B32" }}>
-                Modifier la Déclaration
-              </h1>
-              <p className="text-sm text-gray-600">
-                Corrigez les erreurs et resoumettez votre déclaration
-              </p>
-            </div>
+            <div className="flex items-center space-x-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setLocation("/dashboard")}
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div>
+                <h1 className="text-xl font-bold" style={{ color: "#006B32" }}>
+                  Modifier la Déclaration #{currentDeclarationId}
+                </h1>
+                <p className="text-sm text-gray-600">
+                  Corrigez les erreurs et resoumettez votre déclaration
+                </p>
+              </div>
           </div>
         </div>
       </header>
