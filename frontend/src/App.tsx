@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Login from "./pages/Login";
@@ -15,7 +15,7 @@ import MairieDashboard from "./pages/MairieDashboard";
 import MairieDeclarationDetail from "./pages/MairieDeclarationDetail";
 import HopitalDashboard from "./pages/HopitalDashboard";
 import HopitalVerificationDetail from "./pages/HopitalVerificationDetail";
-import { ROLES, UserRole } from "./config/roles";
+import { ROLES } from "./config/roles";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import { useEffect } from "react";
 

@@ -61,6 +61,7 @@ const mockVerificationRequest = {
 export default function HopitalVerificationDetail() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/hopital/verification/:id");
+  const verificationId = params?.id ?? String(mockVerificationRequest.id);
   
   const [validateDialogOpen, setValidateDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
@@ -118,22 +119,22 @@ export default function HopitalVerificationDetail() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center space-x-4">
-            <Button 
-              variant="ghost" 
-              size="icon"
-              onClick={() => setLocation("/hopital/dashboard")}
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div>
-              <h1 className="text-xl font-bold" style={{ color: "#006B32" }}>
-                Vérification du Certificat d'Accouchement
-              </h1>
-              <p className="text-sm text-gray-600">
-                Demande de vérification #{mockVerificationRequest.id}
-              </p>
-            </div>
+            <div className="flex items-center space-x-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setLocation("/hopital/dashboard")}
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+                <div>
+                  <h1 className="text-xl font-bold" style={{ color: "#006B32" }}>
+                  Vérification du Certificat d'Accouchement
+                </h1>
+                <p className="text-sm text-gray-600">
+                  Demande de vérification #{verificationId}
+                </p>
+              </div>
           </div>
         </div>
       </header>

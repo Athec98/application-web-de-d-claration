@@ -46,7 +46,7 @@ export default function Register() {
     setLoading(true);
 
     try {
-      const { confirmPassword, ...userData } = formData;
+        const { confirmPassword: _confirmPassword, ...userData } = formData;
       
       const response = await authService.register({
         ...userData,

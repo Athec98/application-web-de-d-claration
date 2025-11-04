@@ -11,6 +11,7 @@ import { ROLES, ROLE_REDIRECTS } from "@/config/roles";
 export default function VerifyOtp() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const requestedEmail = searchParams.get("email");
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
@@ -159,9 +160,10 @@ export default function VerifyOtp() {
         <Card>
           <CardHeader>
             <CardTitle>Vérification OTP</CardTitle>
-            <CardDescription>
-              Code envoyé à l'utilisateur ID: {userId.substring(0, 8)}...
-            </CardDescription>
+              <CardDescription>
+                Code envoyé à l'utilisateur ID: {userId.substring(0, 8)}...
+                {requestedEmail ? ` (${requestedEmail})` : ""}
+              </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleVerifyOtp} className="space-y-4">
