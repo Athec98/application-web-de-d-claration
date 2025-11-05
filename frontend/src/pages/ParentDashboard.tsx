@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Plus, FileText, Download, Bell, LogOut, User, Edit } from "lucide-react";
 import { toast } from "sonner";
+import NotificationsPanel from "@/components/NotificationsPanel";
 
 // Données simulées
 const mockDeclarations = [
@@ -39,6 +40,7 @@ const mockDeclarations = [
 const mockCertificates = [
   {
     id: 1,
+    declarationId: 1,
     childName: "Fatou Diop",
     documentType: "Acte de naissance",
     available: true,
@@ -46,17 +48,25 @@ const mockCertificates = [
 ];
 
 const getStatusBadge = (status: string) => {
-  const statusConfig = {
-    en_cours: { label: "En cours", variant: "secondary" as const, className: "" },
-    en_attente: { label: "En attente", variant: "default" as const, className: "" },
-    valide: { label: "Validé", variant: "default" as const, className: "bg-green-600" },
-    rejete: { label: "Rejeté", variant: "destructive" as const, className: "" },
+  const statusConfig: Record<string, { label: string; className: string }> = {
+    en_attente: { label: "En attente", className: "bg-yellow-500 text-white" },
+    en_cours_mairie: { label: "En cours (Mairie)", className: "bg-blue-500 text-white" },
+    en_verification_hopital: { label: "En vérification (Hôpital)", className: "bg-purple-500 text-white" },
+    certificat_valide: { label: "Certificat validé", className: "bg-green-500 text-white" },
+    certificat_rejete: { label: "Certificat rejeté", className: "bg-red-500 text-white" },
+    validee: { label: "Validée", className: "bg-green-600 text-white" },
+    rejetee: { label: "Rejetée", className: "bg-red-600 text-white" },
+    archivee: { label: "Archivée", className: "bg-gray-500 text-white" },
+    // Anciens statuts pour compatibilité
+    en_cours: { label: "En cours", className: "bg-blue-500 text-white" },
+    valide: { label: "Validé", className: "bg-green-600 text-white" },
+    rejete: { label: "Rejeté", className: "bg-red-600 text-white" },
   };
 
-  const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.en_cours;
+  const config = statusConfig[status] || statusConfig.en_attente;
   
   return (
-    <Badge variant={config.variant} className={config.className}>
+    <Badge className={config.className}>
       {config.label}
     </Badge>
   );
@@ -64,16 +74,20 @@ const getStatusBadge = (status: string) => {
 
 export default function ParentDashboard() {
   const [, setLocation] = useLocation();
-  const [notifications] = useState(2);
 
   const handleLogout = () => {
-    toast.success("Déconnexion réussie");
-    setLocation("/login");
+    // Nettoyer le localStorage
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('tempUserId');
+    
+    // Rediriger immédiatement vers la page de connexion avec un rechargement complet
+    // Utiliser replace() pour éviter que l'utilisateur puisse revenir en arrière
+    window.location.replace('/login');
   };
 
-  const handleDownload = (childName: string) => {
-    toast.info(`Redirection vers le paiement pour télécharger l'acte de ${childName}`);
-    // TODO: Implémenter le flux de paiement
+  const handleDownload = (declarationId: number) => {
+    window.location.href = `/payment?type=certificate&declarationId=${declarationId}`;
   };
 
   return (
@@ -97,22 +111,12 @@ export default function ParentDashboard() {
             </div>
             
             <div className="flex items-center space-x-4">
-              <Button 
-                variant="ghost" 
-                size="icon"
-                className="relative"
-                onClick={() => toast.info("Notifications à venir")}
-              >
-                <Bell className="h-5 w-5" />
-                {notifications > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-senegal-red text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                    {notifications}
-                  </span>
-                )}
-              </Button>
+              <NotificationsPanel />
               <Button 
                 variant="ghost"
-                onClick={() => setLocation("/profile")}
+                onClick={() => {
+                  window.location.href = '/profile';
+                }}
               >
                 <User className="h-4 w-4 mr-2" />
                 Mon Profil
@@ -133,7 +137,21 @@ export default function ParentDashboard() {
       <main className="container mx-auto px-4 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
-          <h2 className="text-2xl font-bold mb-2">Bienvenue sur votre tableau de bord</h2>
+          <h2 className="text-2xl font-bold mb-2">
+            Bienvenue{(() => {
+              const user = localStorage.getItem('user');
+              if (user) {
+                try {
+                  const userData = JSON.parse(user);
+                  const name = userData.firstName || userData.name || '';
+                  return name ? ` ${name}` : '';
+                } catch (e) {
+                  return '';
+                }
+              }
+              return '';
+            })()} sur votre tableau de bord
+          </h2>
           <p className="text-gray-600">
             Gérez vos déclarations de naissance et téléchargez vos documents officiels
           </p>
@@ -153,7 +171,9 @@ export default function ParentDashboard() {
                 size="lg"
                 className="text-white font-semibold"
                 style={{ backgroundColor: "#00853F" }}
-                onClick={() => setLocation("/new-declaration")}
+                onClick={() => {
+                  window.location.href = '/new-declaration';
+                }}
               >
                 <Plus className="h-5 w-5 mr-2" />
                 Nouvelle Déclaration
@@ -197,7 +217,9 @@ export default function ParentDashboard() {
                         <Button 
                           variant="ghost" 
                           size="sm"
-                          onClick={() => toast.info("Détails de la déclaration")}
+                          onClick={() => {
+                            window.location.href = `/declaration/${declaration.id}`;
+                          }}
                         >
                           <FileText className="h-4 w-4 mr-2" />
                           Voir
@@ -206,7 +228,9 @@ export default function ParentDashboard() {
                           <Button 
                             variant="outline" 
                             size="sm"
-                            onClick={() => setLocation(`/edit-declaration/${declaration.id}`)}
+                            onClick={() => {
+                              window.location.href = `/edit-declaration/${declaration.id}`;
+                            }}
                           >
                             <Edit className="h-4 w-4 mr-2" />
                             Modifier
@@ -250,7 +274,7 @@ export default function ParentDashboard() {
                         <Button 
                           size="sm"
                           className="bg-senegal-green hover:bg-senegal-green-dark"
-                          onClick={() => handleDownload(cert.childName)}
+                          onClick={() => handleDownload(cert.declarationId || cert.id)}
                         >
                           <Download className="h-4 w-4 mr-2" />
                           Télécharger (250 F)

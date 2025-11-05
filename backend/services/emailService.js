@@ -49,7 +49,47 @@ exports.sendVerificationEmail = async (email, otp, userId) => {
     console.log(`✅ Email OTP envoyé avec succès à ${email}`);
     return true;
   } catch (error) {
-    console.error('❌ Erreur lors de l’envoi de l’email OTP :', error);
-    throw new Error('Impossible d’envoyer l’email de vérification');
+    console.error(`❌ Erreur lors de l'envoi de l'email OTP :`, error);
+    throw new Error(`Impossible d'envoyer l'email de vérification`);
+  }
+};
+
+// Fonction d'envoi d'email de réinitialisation de mot de passe
+exports.sendPasswordResetEmail = async (email, message) => {
+  try {
+    const emailHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Notification CIVILE-APP</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #2c3e50;">Notification CIVILE-APP</h2>
+          <p>${message}</p>
+          <p style="margin-top: 30px; font-size: 12px; color: #7f8c8d;">
+            Si vous n'avez pas effectué cette action, veuillez contacter le support immédiatement.
+          </p>
+          <p style="margin-top: 20px; font-size: 12px; color: #7f8c8d;">
+            © ${new Date().getFullYear()} CIVILE-APP - Tous droits réservés
+          </p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    await transporter.sendMail({
+      from: `"CIVILE-APP" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Notification de changement de mot de passe - CIVILE-APP',
+      html: emailHtml
+    });
+
+    console.log(`✅ Email de notification envoyé avec succès à ${email}`);
+    return true;
+  } catch (error) {
+    console.error(`❌ Erreur lors de l'envoi de l'email de notification :`, error);
+    throw new Error(`Impossible d'envoyer l'email de notification`);
   }
 };

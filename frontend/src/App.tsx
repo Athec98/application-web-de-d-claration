@@ -11,6 +11,8 @@ import ParentDashboard from "./pages/ParentDashboard";
 import ParentProfile from "./pages/ParentProfile";
 import NewDeclaration from "./pages/NewDeclaration";
 import EditDeclaration from "./pages/EditDeclaration";
+import ParentDeclarationDetail from "./pages/ParentDeclarationDetail";
+import Payment from "./pages/Payment";
 import MairieDashboard from "./pages/MairieDashboard";
 import MairieDeclarationDetail from "./pages/MairieDeclarationDetail";
 import HopitalDashboard from "./pages/HopitalDashboard";
@@ -62,6 +64,16 @@ function AppRouter() {
       <Route path="/edit-declaration/:id" element={
         <ProtectedRoute allowedRoles={[ROLES.PARENT, ROLES.ADMIN]}>
           <EditDeclaration />
+        </ProtectedRoute>
+      } />
+      <Route path="/declaration/:id" element={
+        <ProtectedRoute allowedRoles={[ROLES.PARENT, ROLES.ADMIN]}>
+          <ParentDeclarationDetail />
+        </ProtectedRoute>
+      } />
+      <Route path="/payment" element={
+        <ProtectedRoute allowedRoles={[ROLES.PARENT, ROLES.ADMIN]}>
+          <Payment />
         </ProtectedRoute>
       } />
       

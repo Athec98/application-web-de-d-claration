@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, useRoute } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   ArrowLeft, 
   FileText, 
@@ -21,77 +22,109 @@ import {
   XCircle, 
   CheckCircle,
   Download,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Loader2
 } from "lucide-react";
 import { toast } from "sonner";
-
-// Données simulées
-const mockDeclaration = {
-  id: 1,
-  // Informations enfant
-  childFirstName: "Mamadou",
-  childLastName: "Sall",
-  childGender: "masculin",
-  birthDate: "2024-10-20T14:30:00",
-  birthPlace: "Hôpital Principal de Dakar",
-  
-  // Informations parents
-  fatherFirstName: "Ousmane",
-  fatherLastName: "Sall",
-  fatherIdNumber: "1234567890123",
-  motherFirstName: "Awa",
-  motherLastName: "Diop",
-  motherIdNumber: "9876543210987",
-  residenceAddress: "Parcelles Assainies, Dakar",
-  
-  // Métadonnées
-  parentName: "Awa Sall",
-  parentPhone: "+221 77 123 45 67",
-  parentEmail: "awa.sall@example.com",
-  submittedDate: "2024-10-26T10:00:00",
-  status: "en_cours",
-  
-  // Documents
-  documents: [
-    { id: 1, type: "certificat_accouchement", name: "certificat_accouchement.pdf", url: "#" },
-    { id: 2, type: "id_pere", name: "cni_pere.jpg", url: "#" },
-    { id: 3, type: "id_mere", name: "cni_mere.jpg", url: "#" },
-  ],
-  
-  // Réponse hôpital (si existe)
-  hospitalResponse: null as { isValid: boolean; comment: string; date: string } | null,
-};
+import { declarationService, type Declaration } from "@/services/declarationService";
+import { geographicService, type Hopital } from "@/services/geographicService";
+import { acteNaissanceService } from "@/services/acteNaissanceService";
 
 export default function MairieDeclarationDetail() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/mairie/declaration/:id");
+  const declarationId = params?.id;
+  
+  const [declaration, setDeclaration] = useState<Declaration | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingAction, setLoadingAction] = useState(false);
   
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [sendToHospitalDialogOpen, setSendToHospitalDialogOpen] = useState(false);
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
-  const [loading, setLoading] = useState(false);
   
+  // Hôpitaux suggérés
+  const [suggestedHospitals, setSuggestedHospitals] = useState<Hopital[]>([]);
+  const [selectedHospital, setSelectedHospital] = useState<string>("");
+  const [loadingHospitals, setLoadingHospitals] = useState(false);
+
   // Données du certificat à générer
   const [certificateData, setCertificateData] = useState({
-    certificateNumber: `SN-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-    registrationNumber: "",
-    registrationDate: new Date().toISOString().split('T')[0],
-    officerName: "",
-    digitalStamp: null as File | null,
-    digitalSignature: null as File | null,
+    timbreNumeriqueUrl: "",
+    cachetNumeriqueUrl: "",
+    timbreFile: null as File | null,
+    cachetFile: null as File | null,
   });
 
-  const handleSendToHospital = async () => {
-    setLoading(true);
+  // Charger la déclaration
+  useEffect(() => {
+    if (declarationId) {
+      loadDeclaration();
+    }
+  }, [declarationId]);
+
+  // Charger les hôpitaux suggérés quand la déclaration est chargée
+  useEffect(() => {
+    if (declaration && sendToHospitalDialogOpen) {
+      loadSuggestedHospitals();
+    }
+  }, [declaration, sendToHospitalDialogOpen]);
+
+  const loadDeclaration = async () => {
+    if (!declarationId) return;
+    
     try {
-      // TODO: Implémenter l'API
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      toast.success("Demande envoyée à l'hôpital pour vérification");
-      setLocation("/mairie/dashboard");
-    } catch (error) {
-      toast.error("Erreur lors de l'envoi");
+      setLoading(true);
+      const data = await declarationService.getDeclarationById(declarationId);
+      setDeclaration(data);
+    } catch (error: any) {
+      console.error("Erreur lors du chargement:", error);
+      toast.error("Erreur lors du chargement de la déclaration");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSuggestedHospitals = async () => {
+    if (!declarationId) return;
+    
+    try {
+      setLoadingHospitals(true);
+      const response = await declarationService.getSuggestedHospitals(declarationId);
+      setSuggestedHospitals(response.hopitaux || []);
+      
+      // Pré-sélectionner l'hôpital d'accouchement si disponible
+      if (declaration?.hopitalAccouchement) {
+        setSelectedHospital(declaration.hopitalAccouchement.toString());
+      }
+    } catch (error: any) {
+      console.error("Erreur lors du chargement des hôpitaux:", error);
+      toast.error("Erreur lors du chargement des hôpitaux");
+    } finally {
+      setLoadingHospitals(false);
+    }
+  };
+
+  const handleSendToHospital = async () => {
+    if (!selectedHospital) {
+      toast.error("Veuillez sélectionner un hôpital");
+      return;
+    }
+
+    if (!declarationId) return;
+
+    setLoadingAction(true);
+    try {
+      await declarationService.sendToHospital(declarationId, selectedHospital);
+      toast.success("Demande envoyée à l'hôpital pour vérification");
+      setSendToHospitalDialogOpen(false);
+      await loadDeclaration(); // Recharger pour mettre à jour le statut
+    } catch (error: any) {
+      console.error("Erreur lors de l'envoi:", error);
+      toast.error(error.response?.data?.message || "Erreur lors de l'envoi");
+    } finally {
+      setLoadingAction(false);
     }
   };
 
@@ -101,54 +134,105 @@ export default function MairieDeclarationDetail() {
       return;
     }
 
-    setLoading(true);
+    if (!declarationId) return;
+
+    setLoadingAction(true);
     try {
-      // TODO: Implémenter l'API
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await declarationService.rejectDeclaration(declarationId, rejectionReason);
       toast.success("Demande rejetée. Le parent a été notifié.");
       setRejectDialogOpen(false);
-      setLocation("/mairie/dashboard");
-    } catch (error) {
-      toast.error("Erreur lors du rejet");
+      await loadDeclaration(); // Recharger pour mettre à jour le statut
+    } catch (error: any) {
+      console.error("Erreur lors du rejet:", error);
+      toast.error(error.response?.data?.message || "Erreur lors du rejet");
     } finally {
-      setLoading(false);
+      setLoadingAction(false);
     }
   };
 
   const handleGenerateCertificate = async () => {
-    if (!certificateData.registrationNumber || !certificateData.officerName) {
-      toast.error("Veuillez remplir tous les champs obligatoires");
+    if (!certificateData.timbreFile || !certificateData.cachetFile) {
+      toast.error("Veuillez ajouter le timbre et le cachet numériques");
       return;
     }
 
-    if (!certificateData.digitalStamp || !certificateData.digitalSignature) {
-      toast.error("Veuillez ajouter le timbre et la signature numériques");
-      return;
-    }
+    if (!declarationId) return;
 
-    setLoading(true);
+    setLoadingAction(true);
     try {
-      // TODO: Implémenter l'API de génération
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Convertir les fichiers en URLs (base64 ou upload)
+      // Pour l'instant, on va utiliser des URLs temporaires
+      // TODO: Implémenter l'upload des fichiers
+      const timbreUrl = URL.createObjectURL(certificateData.timbreFile);
+      const cachetUrl = URL.createObjectURL(certificateData.cachetFile);
+
+      // Récupérer l'ID de l'utilisateur connecté depuis localStorage
+      const userStr = localStorage.getItem('user');
+      const user = userStr ? JSON.parse(userStr) : null;
+      const officierEtatCivilId = user?._id || user?.id;
+
+      if (!officierEtatCivilId) {
+        toast.error("Erreur: Utilisateur non connecté");
+        return;
+      }
+
+      await acteNaissanceService.generateActeNaissance(declarationId);
+      
       toast.success("Acte de naissance généré avec succès !");
       setGenerateDialogOpen(false);
-      setLocation("/mairie/dashboard");
-    } catch (error) {
-      toast.error("Erreur lors de la génération");
+      await loadDeclaration(); // Recharger pour mettre à jour le statut
+      
+      // Nettoyer les URLs temporaires
+      URL.revokeObjectURL(timbreUrl);
+      URL.revokeObjectURL(cachetUrl);
+    } catch (error: any) {
+      console.error("Erreur lors de la génération:", error);
+      toast.error(error.response?.data?.message || "Erreur lors de la génération");
     } finally {
-      setLoading(false);
+      setLoadingAction(false);
     }
   };
 
-  const getDocumentTypeLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      certificat_accouchement: "Certificat d'accouchement",
-      id_pere: "Pièce d'identité du père",
-      id_mere: "Pièce d'identité de la mère",
-      autre: "Autre document",
+  const getStatusBadge = (status: string) => {
+    const statusConfig: Record<string, { label: string; className: string }> = {
+      en_attente: { label: "En attente", className: "bg-yellow-500" },
+      en_cours_mairie: { label: "En cours (Mairie)", className: "bg-blue-500" },
+      en_verification_hopital: { label: "En vérification (Hôpital)", className: "bg-purple-500" },
+      certificat_valide: { label: "Certificat validé", className: "bg-green-500" },
+      certificat_rejete: { label: "Certificat rejeté", className: "bg-red-500" },
+      validee: { label: "Validée", className: "bg-green-600" },
+      rejetee: { label: "Rejetée", className: "bg-red-600" },
+      archivee: { label: "Archivée", className: "bg-gray-500" },
     };
-    return labels[type] || type;
+
+    const config = statusConfig[status] || statusConfig.en_attente;
+    
+    return (
+      <Badge className={`text-white ${config.className}`}>
+        {config.label}
+      </Badge>
+    );
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-senegal-green" />
+      </div>
+    );
+  }
+
+  if (!declaration) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-600">Déclaration non trouvée</p>
+      </div>
+    );
+  }
+
+  const canSendToHospital = declaration.statut === 'en_cours_mairie';
+  const canGenerateActe = declaration.statut === 'certificat_valide';
+  const hasHospitalResponse = declaration.statut === 'certificat_valide' || declaration.statut === 'certificat_rejete';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -159,7 +243,9 @@ export default function MairieDeclarationDetail() {
             <Button 
               variant="ghost" 
               size="icon"
-              onClick={() => setLocation("/mairie/dashboard")}
+              onClick={() => {
+                window.location.href = "/mairie/dashboard";
+              }}
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -168,7 +254,7 @@ export default function MairieDeclarationDetail() {
                 Consultation de la Déclaration
               </h1>
               <p className="text-sm text-gray-600">
-                Déclaration #{mockDeclaration.id}
+                Déclaration #{declaration._id}
               </p>
             </div>
           </div>
@@ -184,20 +270,20 @@ export default function MairieDeclarationDetail() {
               <div>
                 <CardTitle>Statut de la demande</CardTitle>
                 <CardDescription>
-                  Soumise le {new Date(mockDeclaration.submittedDate).toLocaleDateString('fr-FR')}
+                  Soumise le {new Date(declaration.createdAt).toLocaleDateString('fr-FR')}
                 </CardDescription>
               </div>
-              <Badge className="bg-gray-600">En cours</Badge>
+              {getStatusBadge(declaration.statut)}
             </div>
           </CardHeader>
           <CardContent>
-            {!mockDeclaration.hospitalResponse && (
+            {canSendToHospital && (
               <div className="flex space-x-4">
                 <Button
                   className="text-white"
                   style={{ backgroundColor: "#00853F" }}
-                  onClick={handleSendToHospital}
-                  disabled={loading}
+                  onClick={() => setSendToHospitalDialogOpen(true)}
+                  disabled={loadingAction}
                 >
                   <Send className="h-4 w-4 mr-2" />
                   Envoyer à l'hôpital
@@ -205,6 +291,7 @@ export default function MairieDeclarationDetail() {
                 <Button
                   variant="destructive"
                   onClick={() => setRejectDialogOpen(true)}
+                  disabled={loadingAction}
                 >
                   <XCircle className="h-4 w-4 mr-2" />
                   Rejeter la demande
@@ -212,28 +299,47 @@ export default function MairieDeclarationDetail() {
               </div>
             )}
 
-            {mockDeclaration.hospitalResponse && (
-              <div className="space-y-4">
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+            {hasHospitalResponse && declaration.certificatAccouchement && (
+              <div className="space-y-4 mt-4">
+                <div className={`p-4 rounded-lg border ${
+                  (declaration.certificatAccouchement as any).authentique 
+                    ? 'bg-green-50 border-green-200' 
+                    : 'bg-red-50 border-red-200'
+                }`}>
                   <div className="flex items-center space-x-2 mb-2">
-                    <CheckCircle className="h-5 w-5 text-green-600" />
-                    <span className="font-semibold text-green-800">
-                      Réponse de l'hôpital reçue
+                    {(declaration.certificatAccouchement as any).authentique ? (
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-600" />
+                    )}
+                    <span className={`font-semibold ${
+                      (declaration.certificatAccouchement as any).authentique 
+                        ? 'text-green-800' 
+                        : 'text-red-800'
+                    }`}>
+                      {(declaration.certificatAccouchement as any).authentique 
+                        ? 'Certificat validé par l\'hôpital' 
+                        : 'Certificat rejeté par l\'hôpital'}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-700">
-                    {mockDeclaration.hospitalResponse.comment}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Reçu le {new Date(mockDeclaration.hospitalResponse.date).toLocaleDateString('fr-FR')}
-                  </p>
+                  {(declaration.certificatAccouchement as any).motifRejetHopital && (
+                    <p className="text-sm text-gray-700 mt-2">
+                      Motif: {(declaration.certificatAccouchement as any).motifRejetHopital}
+                    </p>
+                  )}
+                  {(declaration.certificatAccouchement as any).dateVerification && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      Vérifié le {new Date((declaration.certificatAccouchement as any).dateVerification).toLocaleDateString('fr-FR')}
+                    </p>
+                  )}
                 </div>
 
-                {mockDeclaration.hospitalResponse.isValid && (
+                {canGenerateActe && (
                   <Button
                     className="text-white"
                     style={{ backgroundColor: "#00853F" }}
                     onClick={() => setGenerateDialogOpen(true)}
+                    disabled={loadingAction}
                   >
                     <FileText className="h-4 w-4 mr-2" />
                     Générer l'acte de naissance
@@ -252,25 +358,26 @@ export default function MairieDeclarationDetail() {
           <CardContent className="grid grid-cols-2 gap-4">
             <div>
               <Label className="text-gray-600">Prénom(s)</Label>
-              <p className="font-medium">{mockDeclaration.childFirstName}</p>
+              <p className="font-medium">{declaration.prenomEnfant}</p>
             </div>
             <div>
               <Label className="text-gray-600">Nom</Label>
-              <p className="font-medium">{mockDeclaration.childLastName}</p>
+              <p className="font-medium">{declaration.nomEnfant}</p>
             </div>
             <div>
               <Label className="text-gray-600">Sexe</Label>
-              <p className="font-medium capitalize">{mockDeclaration.childGender}</p>
+              <p className="font-medium">{declaration.sexe === 'M' ? 'Masculin' : 'Féminin'}</p>
             </div>
             <div>
-              <Label className="text-gray-600">Date et heure de naissance</Label>
+              <Label className="text-gray-600">Date de naissance</Label>
               <p className="font-medium">
-                {new Date(mockDeclaration.birthDate).toLocaleString('fr-FR')}
+                {new Date(declaration.dateNaissance).toLocaleDateString('fr-FR')}
+                {declaration.heureNaissance && ` à ${declaration.heureNaissance}`}
               </p>
             </div>
             <div className="col-span-2">
               <Label className="text-gray-600">Lieu de naissance</Label>
-              <p className="font-medium">{mockDeclaration.birthPlace}</p>
+              <p className="font-medium">{declaration.lieuNaissance}</p>
             </div>
           </CardContent>
         </Card>
@@ -287,16 +394,24 @@ export default function MairieDeclarationDetail() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-gray-600">Prénom(s)</Label>
-                  <p className="font-medium">{mockDeclaration.fatherFirstName}</p>
+                  <p className="font-medium">{declaration.prenomPere || 'N/A'}</p>
                 </div>
                 <div>
                   <Label className="text-gray-600">Nom</Label>
-                  <p className="font-medium">{mockDeclaration.fatherLastName}</p>
+                  <p className="font-medium">{declaration.nomPere}</p>
                 </div>
-                <div className="col-span-2">
-                  <Label className="text-gray-600">Numéro d'identité</Label>
-                  <p className="font-medium">{mockDeclaration.fatherIdNumber}</p>
-                </div>
+                {declaration.professionPere && (
+                  <div>
+                    <Label className="text-gray-600">Profession</Label>
+                    <p className="font-medium">{declaration.professionPere}</p>
+                  </div>
+                )}
+                {declaration.nationalitePere && (
+                  <div>
+                    <Label className="text-gray-600">Nationalité</Label>
+                    <p className="font-medium">{declaration.nationalitePere}</p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -306,84 +421,120 @@ export default function MairieDeclarationDetail() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-gray-600">Prénom(s)</Label>
-                  <p className="font-medium">{mockDeclaration.motherFirstName}</p>
+                  <p className="font-medium">{declaration.prenomMere || 'N/A'}</p>
                 </div>
                 <div>
                   <Label className="text-gray-600">Nom</Label>
-                  <p className="font-medium">{mockDeclaration.motherLastName}</p>
+                  <p className="font-medium">{declaration.nomMere}</p>
                 </div>
-                <div className="col-span-2">
-                  <Label className="text-gray-600">Numéro d'identité</Label>
-                  <p className="font-medium">{mockDeclaration.motherIdNumber}</p>
-                </div>
+                {declaration.nomJeuneFilleMere && (
+                  <div>
+                    <Label className="text-gray-600">Nom de jeune fille</Label>
+                    <p className="font-medium">{declaration.nomJeuneFilleMere}</p>
+                  </div>
+                )}
+                {declaration.professionMere && (
+                  <div>
+                    <Label className="text-gray-600">Profession</Label>
+                    <p className="font-medium">{declaration.professionMere}</p>
+                  </div>
+                )}
+                {declaration.nationaliteMere && (
+                  <div>
+                    <Label className="text-gray-600">Nationalité</Label>
+                    <p className="font-medium">{declaration.nationaliteMere}</p>
+                  </div>
+                )}
               </div>
             </div>
-
-            {/* Adresse */}
-            <div>
-              <Label className="text-gray-600">Adresse de résidence</Label>
-              <p className="font-medium">{mockDeclaration.residenceAddress}</p>
-            </div>
           </CardContent>
         </Card>
 
-        {/* Documents justificatifs */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Documents Justificatifs</CardTitle>
-            <CardDescription>
-              Cliquez sur un document pour le visualiser
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {mockDeclaration.documents.map((doc) => (
-                <div 
-                  key={doc.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
-                >
-                  <div className="flex items-center space-x-3">
-                    <ImageIcon className="h-5 w-5 text-gray-400" />
-                    <div>
-                      <p className="font-medium">{getDocumentTypeLabel(doc.type)}</p>
-                      <p className="text-sm text-gray-500">{doc.name}</p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.open(doc.url, '_blank')}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Voir
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Informations du déclarant */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Informations du Déclarant</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4">
-            <div>
-              <Label className="text-gray-600">Nom complet</Label>
-              <p className="font-medium">{mockDeclaration.parentName}</p>
-            </div>
-            <div>
-              <Label className="text-gray-600">Téléphone</Label>
-              <p className="font-medium">{mockDeclaration.parentPhone}</p>
-            </div>
-            <div className="col-span-2">
-              <Label className="text-gray-600">Email</Label>
-              <p className="font-medium">{mockDeclaration.parentEmail}</p>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Informations du certificat d'accouchement */}
+        {declaration.certificatAccouchement && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Certificat d'Accouchement</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-gray-600">Numéro</Label>
+                <p className="font-medium">{declaration.certificatAccouchement.numero}</p>
+              </div>
+              <div>
+                <Label className="text-gray-600">Date de délivrance</Label>
+                <p className="font-medium">
+                  {new Date(declaration.certificatAccouchement.dateDelivrance).toLocaleDateString('fr-FR')}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </main>
+
+      {/* Dialog Envoyer à l'hôpital */}
+      <Dialog open={sendToHospitalDialogOpen} onOpenChange={setSendToHospitalDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Envoyer à l'hôpital pour vérification</DialogTitle>
+            <DialogDescription>
+              Sélectionnez l'hôpital à qui envoyer la demande de vérification du certificat d'accouchement
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="hospital">Hôpital *</Label>
+              <Select 
+                value={selectedHospital}
+                onValueChange={setSelectedHospital}
+                disabled={loadingHospitals}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={loadingHospitals ? "Chargement..." : "Sélectionner l'hôpital"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {suggestedHospitals.map((hopital) => (
+                    <SelectItem key={hopital._id} value={hopital._id}>
+                      {hopital.nom} ({hopital.type})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {suggestedHospitals.length === 0 && !loadingHospitals && (
+                <p className="text-sm text-gray-500">Aucun hôpital suggéré disponible</p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setSendToHospitalDialogOpen(false)}
+            >
+              Annuler
+            </Button>
+            <Button 
+              className="text-white"
+              style={{ backgroundColor: "#00853F" }}
+              onClick={handleSendToHospital}
+              disabled={loadingAction || !selectedHospital || loadingHospitals}
+            >
+              {loadingAction ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Envoi...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 mr-2" />
+                  Envoyer
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog Rejet */}
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
@@ -416,9 +567,16 @@ export default function MairieDeclarationDetail() {
             <Button 
               variant="destructive"
               onClick={handleReject}
-              disabled={loading}
+              disabled={loadingAction}
             >
-              {loading ? "Rejet..." : "Confirmer le rejet"}
+              {loadingAction ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Rejet...
+                </>
+              ) : (
+                "Confirmer le rejet"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -430,78 +588,40 @@ export default function MairieDeclarationDetail() {
           <DialogHeader>
             <DialogTitle>Générer l'Acte de Naissance</DialogTitle>
             <DialogDescription>
-              Remplissez les informations et ajoutez le timbre et la signature numériques
+              Ajoutez le timbre et le cachet numériques pour générer l'acte de naissance
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="certNumber">Numéro d'acte *</Label>
-                <Input
-                  id="certNumber"
-                  value={certificateData.certificateNumber}
-                  onChange={(e) => setCertificateData({...certificateData, certificateNumber: e.target.value})}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="regNumber">Numéro d'enregistrement *</Label>
-                <Input
-                  id="regNumber"
-                  value={certificateData.registrationNumber}
-                  onChange={(e) => setCertificateData({...certificateData, registrationNumber: e.target.value})}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="regDate">Date d'enregistrement *</Label>
-                <Input
-                  id="regDate"
-                  type="date"
-                  value={certificateData.registrationDate}
-                  onChange={(e) => setCertificateData({...certificateData, registrationDate: e.target.value})}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="officer">Nom de l'officier *</Label>
-                <Input
-                  id="officer"
-                  value={certificateData.officerName}
-                  onChange={(e) => setCertificateData({...certificateData, officerName: e.target.value})}
-                  placeholder="Nom complet"
-                  required
-                />
-              </div>
-            </div>
-
             <div className="space-y-2">
               <Label htmlFor="stamp">Timbre numérique *</Label>
               <Input
                 id="stamp"
                 type="file"
                 accept="image/*"
-                onChange={(e) => setCertificateData({...certificateData, digitalStamp: e.target.files?.[0] || null})}
+                onChange={(e) => setCertificateData({
+                  ...certificateData, 
+                  timbreFile: e.target.files?.[0] || null
+                })}
               />
-              {certificateData.digitalStamp && (
+              {certificateData.timbreFile && (
                 <p className="text-sm text-green-600">✓ Timbre ajouté</p>
               )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="signature">Signature numérique *</Label>
+              <Label htmlFor="cachet">Cachet numérique *</Label>
               <Input
-                id="signature"
+                id="cachet"
                 type="file"
                 accept="image/*"
-                onChange={(e) => setCertificateData({...certificateData, digitalSignature: e.target.files?.[0] || null})}
+                onChange={(e) => setCertificateData({
+                  ...certificateData, 
+                  cachetFile: e.target.files?.[0] || null
+                })}
               />
-              {certificateData.digitalSignature && (
-                <p className="text-sm text-green-600">✓ Signature ajoutée</p>
+              {certificateData.cachetFile && (
+                <p className="text-sm text-green-600">✓ Cachet ajouté</p>
               )}
             </div>
           </div>
@@ -517,9 +637,16 @@ export default function MairieDeclarationDetail() {
               className="text-white"
               style={{ backgroundColor: "#00853F" }}
               onClick={handleGenerateCertificate}
-              disabled={loading}
+              disabled={loadingAction}
             >
-              {loading ? "Génération..." : "Générer et Valider"}
+              {loadingAction ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Génération...
+                </>
+              ) : (
+                "Générer et Valider"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

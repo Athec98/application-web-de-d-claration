@@ -89,7 +89,7 @@ export default function EditDeclaration() {
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       toast.success("Déclaration corrigée et resoumise avec succès !");
-      setLocation("/dashboard");
+      window.location.href = "/dashboard";
     } catch (error) {
       toast.error("Erreur lors de la resoumission");
     } finally {
@@ -106,7 +106,9 @@ export default function EditDeclaration() {
             <Button 
               variant="ghost" 
               size="icon"
-              onClick={() => setLocation("/dashboard")}
+              onClick={() => {
+                window.location.href = "/dashboard";
+              }}
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -407,7 +409,9 @@ export default function EditDeclaration() {
             <Button 
               type="button" 
               variant="outline"
-              onClick={() => setLocation("/dashboard")}
+              onClick={() => {
+                window.location.href = "/dashboard";
+              }}
             >
               Annuler
             </Button>

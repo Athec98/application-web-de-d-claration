@@ -1,25 +1,81 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Save, User } from "lucide-react";
+import { ArrowLeft, Save, User, LogOut } from "lucide-react";
 import { toast } from "sonner";
+import axios from "axios";
 
 export default function ParentProfile() {
   const [, setLocation] = useLocation();
   const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
   
-  // Données simulées de l'utilisateur
+  // Données utilisateur réelles depuis localStorage ou API
   const [profileData, setProfileData] = useState({
-    firstName: "Awa",
-    lastName: "Sall",
-    email: "awa.sall@example.com",
-    phoneNumber: "+221 77 123 45 67",
-    address: "Parcelles Assainies, Dakar",
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    phoneNumber: "",
+    address: "",
   });
+
+  // Charger les données utilisateur au montage du composant
+  useEffect(() => {
+    const loadUserData = async () => {
+      try {
+        // D'abord essayer de charger depuis localStorage
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          const user = JSON.parse(storedUser);
+          setProfileData({
+            firstName: user.firstName || "",
+            lastName: user.lastName || "",
+            email: user.email || "",
+            phone: user.phone || "",
+            phoneNumber: user.phone || user.phoneNumber || "",
+            address: user.address || "",
+          });
+        }
+
+        // Ensuite récupérer les données à jour depuis l'API
+        const token = localStorage.getItem('token');
+        if (token) {
+          const response = await axios.get('/api/auth/me', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+
+          if (response.data && response.data.success && response.data.user) {
+            const user = response.data.user;
+            setProfileData({
+              firstName: user.firstName || "",
+              lastName: user.lastName || "",
+              email: user.email || "",
+              phone: user.phone || "",
+              phoneNumber: user.phone || user.phoneNumber || "",
+              address: user.address || "",
+            });
+            
+            // Mettre à jour localStorage
+            localStorage.setItem('user', JSON.stringify(user));
+          }
+        }
+      } catch (error: any) {
+        console.error('Erreur lors du chargement des données utilisateur:', error);
+        // Si l'API échoue, garder les données du localStorage
+      } finally {
+        setLoadingData(false);
+      }
+    };
+
+    loadUserData();
+  }, []);
 
   const [passwordData, setPasswordData] = useState({
     currentPassword: "",
@@ -32,11 +88,36 @@ export default function ParentProfile() {
     setLoading(true);
 
     try {
-      // TODO: Implémenter l'API de mise à jour du profil
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      toast.success("Profil mis à jour avec succès !");
-    } catch (error) {
-      toast.error("Erreur lors de la mise à jour du profil");
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error("Vous devez être connecté");
+        setLocation("/login");
+        return;
+      }
+
+      const response = await axios.put('/api/auth/update-profile', {
+        firstName: profileData.firstName,
+        lastName: profileData.lastName,
+        phone: profileData.phone || profileData.phoneNumber,
+        address: profileData.address,
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.data && response.data.success) {
+        // Mettre à jour localStorage avec les nouvelles données
+        const updatedUser = { ...JSON.parse(localStorage.getItem('user') || '{}'), ...response.data.user };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        
+        toast.success("Profil mis à jour avec succès !");
+      }
+    } catch (error: any) {
+      console.error('Erreur mise à jour profil:', error);
+      const errorMessage = error.response?.data?.message || "Erreur lors de la mise à jour du profil";
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -50,24 +131,43 @@ export default function ParentProfile() {
       return;
     }
 
-    if (passwordData.newPassword.length < 8) {
-      toast.error("Le mot de passe doit contenir au moins 8 caractères");
+    if (passwordData.newPassword.length < 6) {
+      toast.error("Le mot de passe doit contenir au moins 6 caractères");
       return;
     }
 
     setLoading(true);
 
     try {
-      // TODO: Implémenter l'API de changement de mot de passe
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      toast.success("Mot de passe modifié avec succès !");
-      setPasswordData({
-        currentPassword: "",
-        newPassword: "",
-        confirmPassword: "",
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error("Vous devez être connecté");
+        setLocation("/login");
+        return;
+      }
+
+      const response = await axios.put('/api/auth/change-password', {
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword,
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
-    } catch (error) {
-      toast.error("Erreur lors du changement de mot de passe");
+
+      if (response.data && response.data.success) {
+        toast.success("Mot de passe modifié avec succès !");
+        setPasswordData({
+          currentPassword: "",
+          newPassword: "",
+          confirmPassword: "",
+        });
+      }
+    } catch (error: any) {
+      console.error('Erreur changement mot de passe:', error);
+      const errorMessage = error.response?.data?.message || "Erreur lors du changement de mot de passe";
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -78,25 +178,45 @@ export default function ParentProfile() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center space-x-4">
-            <Button 
-              variant="ghost" 
-              size="icon"
-              onClick={() => setLocation("/dashboard")}
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div className="flex items-center space-x-3">
-              <User className="h-6 w-6" style={{ color: "#00853F" }} />
-              <div>
-                <h1 className="text-xl font-bold" style={{ color: "#006B32" }}>
-                  Mon Profil
-                </h1>
-                <p className="text-sm text-gray-600">
-                  Gérez vos informations personnelles
-                </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <Button 
+                variant="ghost" 
+                size="icon"
+                onClick={() => {
+                  window.location.href = '/dashboard';
+                }}
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div className="flex items-center space-x-3">
+                <User className="h-6 w-6" style={{ color: "#00853F" }} />
+                <div>
+                  <h1 className="text-xl font-bold" style={{ color: "#006B32" }}>
+                    Mon Profil
+                  </h1>
+                  <p className="text-sm text-gray-600">
+                    Gérez vos informations personnelles
+                  </p>
+                </div>
               </div>
             </div>
+            <Button 
+              variant="ghost" 
+              onClick={() => {
+                // Nettoyer le localStorage
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                localStorage.removeItem('tempUserId');
+                
+                // Rediriger immédiatement vers la page de connexion avec un rechargement complet
+                // Utiliser replace() pour éviter que l'utilisateur puisse revenir en arrière
+                window.location.replace('/login');
+              }}
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Déconnexion
+            </Button>
           </div>
         </div>
       </header>

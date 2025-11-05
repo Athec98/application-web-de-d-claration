@@ -63,23 +63,46 @@ export const authService = {
 
   async login(email: string, password: string) {
     try {
-      const response = await axios.post(`${API_URL}/login`, { 
+      const loginUrl = `${API_URL}/login`;
+      console.log('🔐 Tentative de connexion:', { 
+        url: loginUrl, 
+        email: email.trim().toLowerCase(),
+        timestamp: new Date().toISOString()
+      });
+
+      const response = await axios.post(loginUrl, { 
         email: email.trim().toLowerCase(),
         password: password
       }, {
-        timeout: 10000, // 10 secondes de timeout
+        timeout: 15000, // 15 secondes de timeout
         headers: {
           'Content-Type': 'application/json'
-        }
+        },
+        // S'assurer que la requête utilise l'URL relative pour passer par le proxy
+        validateStatus: (status) => status < 500 // Ne pas traiter les erreurs 4xx comme des erreurs axios
       });
       
+      console.log('✅ Réponse reçue:', { 
+        status: response.status, 
+        success: response.data?.success 
+      });
+
       if (response.data && response.data.success) {
         return response.data;
       } else {
         throw new Error(response.data?.message || 'Réponse invalide du serveur');
       }
     } catch (error: any) {
-      console.error('Erreur lors de la connexion:', error);
+      console.error('❌ Erreur lors de la connexion:', {
+        message: error?.message,
+        code: error?.code,
+        status: error?.response?.status,
+        url: error?.config?.url,
+        baseURL: error?.config?.baseURL,
+        timeout: error?.code === 'ECONNABORTED',
+        request: error?.request ? 'Requête envoyée mais pas de réponse' : 'Pas de requête',
+        fullError: error
+      });
       
       if (error.response) {
         // Le serveur a répondu avec un code d'erreur
@@ -89,7 +112,7 @@ export const authService = {
           throw new Error(data?.message || 'Email ou mot de passe incorrect');
         } else if (status === 403) {
           // Pour la vérification d'email
-          const err = new Error(data?.message || 'Veuvez vérifier votre email avant de vous connecter');
+          const err = new Error(data?.message || 'Veuillez vérifier votre email avant de vous connecter');
           (err as any).requiresVerification = true;
           (err as any).userId = data?.userId;
           throw err;
@@ -100,9 +123,12 @@ export const authService = {
         }
       } else if (error.request) {
         // La requête a été faite mais aucune réponse n'a été reçue
-        throw new Error('Impossible de se connecter au serveur. Vérifiez votre connexion internet.');
+        console.error('❌ Pas de réponse du serveur. Vérifiez que le backend est démarré sur le port 5001.');
+        throw new Error('Impossible de se connecter au serveur. Vérifiez que le backend est démarré.');
       } else if (error.code === 'ECONNABORTED') {
         throw new Error('La connexion a expiré. Veuillez réessayer.');
+      } else if (error.code === 'ERR_NETWORK' || error.code === 'ECONNREFUSED') {
+        throw new Error('Impossible de se connecter au serveur. Vérifiez que le backend est démarré sur le port 5001.');
       } else {
         // Erreur lors de la configuration de la requête
         throw new Error('Erreur de configuration de la requête: ' + error.message);

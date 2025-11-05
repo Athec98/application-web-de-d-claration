@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { FileText, LogOut } from "lucide-react";
 import { toast } from "sonner";
+import NotificationsPanel from "@/components/NotificationsPanel";
 
 // Données simulées
 const mockVerificationRequests = [
@@ -39,8 +40,14 @@ export default function HopitalDashboard() {
 
 
   const handleLogout = () => {
-    toast.success("Déconnexion réussie");
-    setLocation("/login");
+    // Nettoyer le localStorage
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('tempUserId');
+    
+    // Rediriger immédiatement vers la page de connexion avec un rechargement complet
+    // Utiliser replace() pour éviter que l'utilisateur puisse revenir en arrière
+    window.location.replace('/login');
   };
 
 
@@ -66,6 +73,7 @@ export default function HopitalDashboard() {
             </div>
             
             <div className="flex items-center space-x-4">
+              <NotificationsPanel />
               <Button 
                 variant="ghost" 
                 onClick={handleLogout}
@@ -150,7 +158,9 @@ export default function HopitalDashboard() {
                           <Button 
                             variant="outline" 
                             size="sm"
-                            onClick={() => setLocation(`/hopital/verification/${request.id}`)}
+                            onClick={() => {
+                              window.location.href = `/hopital/verification/${request.id}`;
+                            }}
                           >
                             <FileText className="h-4 w-4 mr-2" />
                             Consulter et Vérifier

@@ -1,25 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { check, validationResult } = require('express-validator');
-const { auth, admin } = require('../middleware/auth');
-const Declaration = require('../models/Declaration');
+const { check } = require('express-validator');
+const { auth } = require('../middleware/auth');
+const declarationController = require('../controllers/declarationController');
 
-// @route   GET api/declarations
-// @desc    Get all declarations (for admin)
-// @access  Private/Admin
-router.get('/', [auth, admin], async (req, res) => {
-  try {
-    const declarations = await Declaration.find().sort({ date: -1 });
-    res.json(declarations);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Erreur serveur');
-  }
-});
-
-// @route   POST api/declarations
-// @desc    Create a declaration
-// @access  Private
+// @route   POST /api/declarations
+// @desc    Créer une nouvelle déclaration (avec vérification des doublons)
+// @access  Private (Parent)
 router.post(
   '/',
   [
@@ -31,111 +18,51 @@ router.post(
       check('lieuNaissance', 'Le lieu de naissance est requis').not().isEmpty(),
       check('sexe', 'Le sexe est requis').not().isEmpty(),
       check('nomPere', 'Le nom du père est requis').not().isEmpty(),
-      check('nomMere', 'Le nom de la mère est requis').not().isEmpty()
+      check('nomMere', 'Le nom de la mère est requis').not().isEmpty(),
+      check('region', 'La région est requise').not().isEmpty(),
+      check('departement', 'Le département est requis').not().isEmpty(),
+      check('mairie', 'La mairie est requise').not().isEmpty(),
+      check('certificatAccouchement.numero', 'Le numéro du certificat d\'accouchement est requis').not().isEmpty(),
+      check('certificatAccouchement.dateDelivrance', 'La date de délivrance du certificat est requise').not().isEmpty()
     ]
   ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    try {
-      const newDeclaration = new Declaration({
-        user: req.user.id,
-        ...req.body
-      });
-
-      const declaration = await newDeclaration.save();
-      res.json(declaration);
-    } catch (err) {
-      console.error(err.message);
-      res.status(500).send('Erreur serveur');
-    }
-  }
+  declarationController.createDeclaration
 );
 
-// @route   GET api/declarations/:id
-// @desc    Get declaration by ID
+// @route   GET /api/declarations
+// @desc    Obtenir toutes les déclarations (filtrées selon le rôle)
 // @access  Private
-router.get('/:id', auth, async (req, res) => {
-  try {
-    const declaration = await Declaration.findById(req.params.id);
+router.get('/', auth, declarationController.getDeclarations);
 
-    if (!declaration) {
-      return res.status(404).json({ msg: 'Déclaration non trouvée' });
-    }
+// IMPORTANT: Les routes spécifiques doivent être définies AVANT les routes génériques /:id
+// @route   GET /api/declarations/:id/suggested-hospitals
+// @desc    Obtenir les hôpitaux suggérés pour une déclaration
+// @access  Private (Mairie)
+router.get('/:id/suggested-hospitals', auth, declarationController.getSuggestedHospitals);
 
-    // Vérifier que l'utilisateur est autorisé à voir cette déclaration
-    if (declaration.user.toString() !== req.user.id && req.user.role !== 'admin') {
-      return res.status(401).json({ msg: 'Non autorisé' });
-    }
-
-    res.json(declaration);
-  } catch (err) {
-    console.error(err.message);
-    if (err.kind === 'ObjectId') {
-      return res.status(404).json({ msg: 'Déclaration non trouvée' });
-    }
-    res.status(500).send('Erreur serveur');
-  }
-});
-
-// @route   PUT api/declarations/:id
-// @desc    Update declaration
+// @route   GET /api/declarations/:id
+// @desc    Obtenir une déclaration par ID
 // @access  Private
-router.put('/:id', auth, async (req, res) => {
-  try {
-    let declaration = await Declaration.findById(req.params.id);
+router.get('/:id', auth, declarationController.getDeclarationById);
 
-    if (!declaration) {
-      return res.status(404).json({ msg: 'Déclaration non trouvée' });
-    }
+// @route   PUT /api/declarations/:id/send-to-hospital
+// @desc    Mairie : Envoyer la déclaration à l'hôpital
+// @access  Private (Mairie)
+router.put('/:id/send-to-hospital', auth, declarationController.sendToHospital);
 
-    // Vérifier que l'utilisateur est le propriétaire de la déclaration
-    if (declaration.user.toString() !== req.user.id) {
-      return res.status(401).json({ msg: 'Non autorisé' });
-    }
+// @route   PUT /api/declarations/:id/reject
+// @desc    Mairie : Rejeter une déclaration
+// @access  Private (Mairie)
+router.put('/:id/reject', auth, declarationController.rejectDeclaration);
 
-    declaration = await Declaration.findByIdAndUpdate(
-      req.params.id,
-      { $set: req.body },
-      { new: true }
-    );
+// @route   PUT /api/declarations/:id/validate-certificate
+// @desc    Hôpital : Valider le certificat d'accouchement
+// @access  Private (Hôpital)
+router.put('/:id/validate-certificate', auth, declarationController.validateCertificate);
 
-    res.json(declaration);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Erreur serveur');
-  }
-});
-
-// @route   DELETE api/declarations/:id
-// @desc    Delete declaration
-// @access  Private
-router.delete('/:id', auth, async (req, res) => {
-  try {
-    const declaration = await Declaration.findById(req.params.id);
-
-    if (!declaration) {
-      return res.status(404).json({ msg: 'Déclaration non trouvée' });
-    }
-
-    // Vérifier que l'utilisateur est le propriétaire de la déclaration
-    if (declaration.user.toString() !== req.user.id) {
-      return res.status(401).json({ msg: 'Non autorisé' });
-    }
-
-    await declaration.remove();
-
-    res.json({ msg: 'Déclaration supprimée' });
-  } catch (err) {
-    console.error(err.message);
-    if (err.kind === 'ObjectId') {
-      return res.status(404).json({ msg: 'Déclaration non trouvée' });
-    }
-    res.status(500).send('Erreur serveur');
-  }
-});
+// @route   PUT /api/declarations/:id/reject-certificate
+// @desc    Hôpital : Rejeter le certificat d'accouchement
+// @access  Private (Hôpital)
+router.put('/:id/reject-certificate', auth, declarationController.rejectCertificate);
 
 module.exports = router;

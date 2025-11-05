@@ -82,7 +82,7 @@ const admin = (req, res, next) => {
 };
 
 // Middleware pour vérifier les rôles
-authorize = (...roles) => {
+const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({

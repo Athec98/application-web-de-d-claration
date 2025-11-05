@@ -1,12 +1,12 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const { sendVerificationEmail } = require('../services/emailService');
+const crypto = require('crypto');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../services/emailService');
 
 // === Générer un token JWT ===
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: '30d'
+    expiresIn: process.env.JWT_EXPIRE || '30d'
   });
 };
 
@@ -18,17 +18,21 @@ const generateOTP = () => {
 // === Inscription ===
 exports.register = async (req, res) => {
   try {
-    const { name, firstName, lastName, email, phone, password } = req.body;
+    const { name, firstName, lastName, email, phone, password, role = 'parent' } = req.body;
     
-    // Journalisation de la tentative d'inscription (sans données sensibles)
-    console.log('Tentative d\'inscription pour l\'email:', email ? 'fourni' : 'non fourni');
-
     // Validation des champs obligatoires
     if (!email || !password) {
-      console.log('Échec de l\'inscription: email ou mot de passe manquant');
       return res.status(400).json({ 
         success: false, 
         message: 'Email et mot de passe sont requis' 
+      });
+    }
+
+    // Validation du mot de passe
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le mot de passe doit contenir au moins 6 caractères'
       });
     }
 
@@ -38,59 +42,55 @@ exports.register = async (req, res) => {
     // Vérifier si l'utilisateur existe déjà
     const userExists = await User.findOne({ email: cleanedEmail });
     if (userExists) {
-      console.log('Tentative d\'inscription avec un email existant:', cleanedEmail);
-      // Ne pas révéler que l'email existe déjà
-      return res.status(200).json({ 
-        success: true, 
-        message: 'Si votre email est valable, vous recevrez bientôt un code de vérification' 
+      return res.status(400).json({ 
+        success: false,
+        message: 'Un compte existe déjà avec cet email'
       });
     }
-
-    console.log('Création d\'un nouvel utilisateur avec l\'email:', cleanedEmail);
     
-    // Créer l'utilisateur avec le mot de passe hashé
+    // Créer l'utilisateur
     const user = new User({
-      name,
+      name: name || `${firstName || ''} ${lastName || ''}`.trim(),
       firstName,
       lastName,
       email: cleanedEmail,
       phone,
-      role: 'parent',
+      role: ['parent', 'hopital', 'mairie', 'admin'].includes(role) ? role : 'parent',
       isVerified: false,
       otp: generateOTP(),
-      otpExpire: Date.now() + 10 * 60 * 1000
+      otpExpire: Date.now() + 10 * 60 * 1000 // 10 minutes
     });
 
-    console.log('Définition du mot de passe...');
+    // Définir et hacher le mot de passe
     await user.setPassword(password);
-    
-    console.log('Sauvegarde de l\'utilisateur...');
     await user.save();
-    
-    console.log('Utilisateur enregistré avec succès, ID:', user._id);
-    console.log('Hash du mot de passe:', user.passwordHash ? 'défini' : 'non défini');
 
-    try {
-      await sendVerificationEmail(user.email, user.otp, user._id);
-    } catch (err) {
-      console.error('Erreur envoi email OTP :', err);
-    }
+    // Envoyer l'email de vérification (en arrière-plan, ne pas attendre)
+    sendVerificationEmail(user.email, user.otp, user._id)
+      .catch(error => console.error('Erreur envoi email OTP:', error));
+
+    // Réponse sans données sensibles
+    const userResponse = {
+      id: user._id,
+      email: user.email,
+      name: user.name,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      isVerified: user.isVerified
+    };
 
     res.status(201).json({
       success: true,
       message: 'Inscription réussie. Vérifiez votre email pour le code OTP.',
-      userId: user._id,  // Ajout de l'ID utilisateur à la racine de la réponse
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-        role: user.role,
-        isVerified: user.isVerified
-      }
+      user: userResponse
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Erreur serveur lors de l\'inscription' });
+    console.error('Erreur inscription:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Erreur serveur lors de l\'inscription' 
+    });
   }
 };
 
@@ -100,7 +100,7 @@ exports.verifyOTP = async (req, res) => {
     const { userId, otp } = req.body;
     const requestIP = req.ip || req.connection.remoteAddress;
     
-    // Journalisation sécurisée (sans afficher les données sensibles)
+    // Journalisation sécurisée
     console.log(`Tentative de vérification OTP depuis IP: ${requestIP}`);
     console.log('Détails de la requête:', { 
       hasUserId: !!userId, 
@@ -113,7 +113,7 @@ exports.verifyOTP = async (req, res) => {
       console.log('Échec de vérification: champs manquants');
       return res.status(400).json({ 
         success: false, 
-        message: 'Données de vérification incomplètes' 
+        message: 'ID utilisateur et code OTP requis' 
       });
     }
 
@@ -210,115 +210,118 @@ exports.verifyOTP = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    const requestIP = req.ip || req.connection.remoteAddress;
     
-    // Validation des entrées
+    // Journalisation sécurisée
+    console.log(`Tentative de connexion depuis IP: ${requestIP}`);
+    console.log('Détails de la requête:', {
+      hasEmail: !!email,
+      hasPassword: !!password,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Validation des champs
     if (!email || !password) {
-      console.log('Champs manquants:', { email: !!email, password: '***' });
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Email et mot de passe requis' 
+      console.log('Échec de la connexion: email ou mot de passe manquant');
+      return res.status(400).json({
+        success: false,
+        message: 'Email et mot de passe sont requis'
       });
     }
-
-    // Nettoyer l'email (supprimer les espaces)
+    
+    // Nettoyer l'email
     const cleanedEmail = email.trim().toLowerCase();
     
-    console.log('Tentative de connexion pour l\'email:', cleanedEmail);
-
-    // Trouver l'utilisateur par email en incluant le mot de passe haché
-    const user = await User.findOne({ email: cleanedEmail }).select('+passwordHash +isVerified');
+    // Trouver l'utilisateur avec les champs nécessaires
+    const user = await User.findOne({ email: cleanedEmail })
+      .select('+passwordHash +loginAttempts +lockUntil +isVerified');
     
-    // Journalisation pour le débogage
-    console.log('Utilisateur trouvé:', user ? 'Oui' : 'Non');
-    if (user) {
-      console.log('Statut vérification email:', user.isVerified ? 'Vérifié' : 'Non vérifié');
-    }
-
-    // Ne pas révéler si l'email existe ou non pour des raisons de sécurité
-    const errorResponse = { 
-      success: false, 
-      message: 'Email ou mot de passe incorrect' 
+    // Réponse générique pour éviter les fuites d'informations
+    const errorResponse = {
+      success: false,
+      message: 'Email ou mot de passe incorrect. Vérifiez vos identifiants ou créez un compte si vous n\'en avez pas encore.'
     };
-
+    
+    // Vérifier si l'utilisateur existe
     if (!user) {
-      console.log('Aucun utilisateur trouvé avec cet email');
+      console.log(`Aucun utilisateur trouvé avec l'email: ${cleanedEmail}`);
+      // Vérifier si c'est probablement une faute de frappe courante (gail.com vs gmail.com)
+      if (cleanedEmail.includes('@gail.com')) {
+        console.log('⚠️  Email suspecté d\'être une faute de frappe: gail.com au lieu de gmail.com');
+      }
       return res.status(401).json(errorResponse);
     }
-
-    // Vérifier le mot de passe
-    console.log('=== DÉBUT DÉBOGAGE MOT DE PASSE ===');
-    console.log('Type de password reçu:', typeof password, 'Valeur:', password);
-    console.log('Type de passwordHash stocké:', typeof user.passwordHash);
     
-    // Méthode de débogage pour comparer directement avec bcrypt
-    const debugCompare = async (plain, hash) => {
-      try {
-        console.log('Comparaison avec bcrypt.compare...');
-        const result = await bcrypt.compare(plain, hash);
-        console.log('Résultat de bcrypt.compare:', result);
-        return result;
-      } catch (err) {
-        console.error('Erreur lors de la comparaison avec bcrypt:', err);
-        return false;
-      }
-    };
-    
-    // 1. Essayer avec la méthode du modèle
-    console.log('\n1. Test avec user.matchPassword()...');
-    const isMatch = await user.matchPassword(password);
-    console.log('Résultat de user.matchPassword():', isMatch);
-    
-    // 2. Essayer avec bcrypt.compare directement
-    console.log('\n2. Test avec bcrypt.compare direct...');
-    const directCompare = await debugCompare(password, user.passwordHash);
-    
-    // 3. Essayer avec un mot de passe connu
-    console.log('\n3. Test avec un mot de passe connu...');
-    const testPassword = 'test123'; // Remplacer par un mot de passe de test si nécessaire
-    const testCompare = await debugCompare(testPassword, user.passwordHash);
-    
-    console.log('=== FIN DÉBOGAGE MOT DE PASSE ===\n');
-    
-    if (!isMatch) {
-      console.log('Échec de l\'authentification: mot de passe incorrect');
-      console.log('Premiers caractères du hash stocké:', user.passwordHash ? user.passwordHash.substring(0, 10) + '...' : 'non défini');
+    // Vérifier si le compte est verrouillé
+    if (user.isLocked) {
+      const timeLeft = Math.ceil((user.lockUntil - Date.now()) / (60 * 1000));
+      console.log(`Tentative de connexion avec un compte verrouillé: ${user._id}`);
       
-      // Si le mot de passe de test fonctionne, c'est que le mot de passe fourni est incorrect
-      if (testCompare) {
-        console.log('INFO: Le mot de passe de test fonctionne, vérifiez le mot de passe fourni');
-      }
-      
-      return res.status(401).json(errorResponse);
-    }
-
-    // Vérifier si l'email est vérifié
-    if (!user.isVerified) {
-      console.log('Email non vérifié pour l\'utilisateur:', user._id);
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Veuillez vérifier votre email avant de vous connecter', 
-        requiresVerification: true, 
-        userId: user._id.toString() 
+      return res.status(423).json({
+        success: false,
+        message: `Trop de tentatives. Réessayez dans ${timeLeft} minutes.`
       });
     }
-
-    // Générer un nouveau token JWT
+    
+    // Vérifier le mot de passe
+    const isMatch = await user.matchPassword(password);
+    
+    if (!isMatch) {
+      // Incrémenter le compteur de tentatives échouées
+      await user.incLoginAttempts();
+      
+      // Récupérer le nombre de tentatives restantes
+      const updatedUser = await User.findById(user._id).select('+loginAttempts +lockUntil');
+      const attemptsLeft = 4 - (updatedUser.loginAttempts || 0);
+      
+      console.log(`Échec de l'authentification pour l'utilisateur: ${user._id}`);
+      console.log(`Tentatives restantes: ${attemptsLeft}`);
+      
+      return res.status(401).json({
+        success: false,
+        message: `Identifiants invalides. ${attemptsLeft > 0 ? attemptsLeft + ' tentatives restantes.' : 'Compte verrouillé.'}`
+      });
+    }
+    
+    // Vérifier si l'email est vérifié
+    if (!user.isVerified) {
+      console.log(`Tentative de connexion avec un email non vérifié: ${user._id}`);
+      
+      return res.status(403).json({
+        success: false,
+        message: 'Veuillez vérifier votre email avant de vous connecter',
+        requiresVerification: true,
+        userId: user._id
+      });
+    }
+    
+    // Réinitialiser les tentatives de connexion en cas de succès
+    if (user.loginAttempts > 0) {
+      await user.resetLoginAttempts();
+    }
+    
+    // Générer le token JWT
     const token = generateToken(user._id);
     
-    // Créer un objet utilisateur sans les champs sensibles
-    const userResponse = user.toObject();
-    delete userResponse.password;
-    delete userResponse.otp;
-    delete userResponse.otpExpire;
+    // Créer la réponse utilisateur sans données sensibles
+    const userResponse = {
+      id: user._id,
+      email: user.email,
+      name: user.name,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      isVerified: user.isVerified
+    };
     
-    // Journalisation réussie
-    console.log('Connexion réussie pour l\'utilisateur:', user._id);
+    // Journalisation de la connexion réussie
+    console.log(`Connexion réussie pour l'utilisateur: ${user._id}`);
     
-    // Réponse de succès
-    res.json({ 
-      success: true, 
-      token, 
-      user: userResponse 
+    // Envoyer la réponse avec le token
+    res.json({
+      success: true,
+      token,
+      user: userResponse
     });
   } catch (err) {
     console.error(err);
@@ -329,30 +332,88 @@ exports.login = async (req, res) => {
 // === Récupérer l'utilisateur connecté ===
 exports.getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password -otp -otpExpire');
-    if (!user) return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
-    res.json({ success: true, user });
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+    
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        role: user.role,
+        isVerified: user.isVerified
+      }
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Erreur serveur lors de la récupération du profil' });
+    console.error('Erreur récupération profil:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la récupération du profil'
+    });
   }
 };
 
 // === Mise à jour profil ===
 exports.updateProfile = async (req, res) => {
   try {
-    const { firstName, lastName, phone } = req.body;
-    const updatedUser = await User.findByIdAndUpdate(
+    const { name, firstName, lastName, phone } = req.body;
+    
+    // Mettre à jour uniquement les champs fournis
+    const updateFields = {};
+    if (name) updateFields.name = name;
+    if (firstName) updateFields.firstName = firstName;
+    if (lastName) updateFields.lastName = lastName;
+    if (phone) updateFields.phone = phone;
+    
+    // Si le nom complet n'est pas fourni mais que le prénom ou le nom le sont, mettre à jour le nom complet
+    if ((firstName || lastName) && !name) {
+      updateFields.name = `${firstName || ''} ${lastName || ''}`.trim();
+    }
+    
+    const user = await User.findByIdAndUpdate(
       req.user.id,
-      { firstName, lastName, phone, name: `${firstName} ${lastName}`.trim() },
-      { new: true, runValidators: true }
-    ).select('-password -otp -otpExpire');
-
-    if (!updatedUser) return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
-    res.json({ success: true, message: 'Profil mis à jour', user: updatedUser });
+      updateFields,
+      { 
+        new: true,
+        runValidators: true,
+        select: '-passwordHash -otp -otpExpire -loginAttempts -lockUntil -resetPasswordToken -resetPasswordExpire'
+      }
+    );
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+    
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        role: user.role,
+        isVerified: user.isVerified
+      }
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Erreur serveur lors de la mise à jour du profil' });
+    console.error('Erreur mise à jour profil:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la mise à jour du profil'
+    });
   }
 };
 
@@ -368,6 +429,7 @@ exports.resendOTP = async (req, res) => {
       });
     }
 
+    // Rechercher l'utilisateur
     const user = await User.findById(userId);
     
     if (!user) {
@@ -377,54 +439,98 @@ exports.resendOTP = async (req, res) => {
       });
     }
 
-    // Générer un nouveau code OTP
-    user.otp = generateOTP();
-    user.otpExpire = Date.now() + 10 * 60 * 1000; // 10 minutes d'expiration
-    await user.save();
-
-    // Envoyer le nouvel OTP par email
-    try {
-      await sendVerificationEmail(user.email, user.otp, user._id);
-    } catch (emailError) {
-      console.error('Erreur envoi email OTP (renvoi):', emailError);
-      return res.status(500).json({
+    // Vérifier si l'utilisateur est déjà vérifié
+    if (user.isVerified) {
+      return res.status(400).json({
         success: false,
-        message: 'Code OTP régénéré mais erreur lors de l\'envoi de l\'email',
-        otp: process.env.NODE_ENV === 'development' ? user.otp : undefined
+        message: 'Votre compte est déjà vérifié'
       });
     }
 
+    // Générer un nouvel OTP
+    user.otp = generateOTP();
+    user.otpExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+    
+    await user.save();
+
+    // Envoyer le nouvel OTP par email (en arrière-plan)
+    sendVerificationEmail(user.email, user.otp, user._id)
+      .catch(error => console.error('Erreur envoi email OTP:', error));
+
     res.json({
       success: true,
-      message: 'Un nouveau code de vérification a été envoyé à votre adresse email',
-      otp: process.env.NODE_ENV === 'development' ? user.otp : undefined
+      message: 'Un nouveau code de vérification a été envoyé à votre adresse email'
     });
   } catch (err) {
     console.error('Erreur renvoi OTP:', err);
     res.status(500).json({
       success: false,
-      message: 'Erreur serveur lors du renvoi du code OTP',
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+      message: 'Erreur serveur lors du renvoi du code OTP'
     });
   }
 };
 
-// === Changer mot de passe ===
+// === Changer le mot de passe ===
 exports.changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const user = await User.findById(req.user.id).select('+password');
-    if (!user) return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
 
-    if (!(await user.matchPassword(currentPassword))) {
-      return res.status(400).json({ success: false, message: 'Mot de passe actuel incorrect' });
+    // Validation des champs
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Veuillez fournir l\'ancien et le nouveau mot de passe'
+      });
     }
 
+    // Vérifier la longueur du nouveau mot de passe
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le nouveau mot de passe doit contenir au moins 6 caractères'
+      });
+    }
+
+    // Récupérer l'utilisateur avec le mot de passe
+    const user = await User.findById(req.user.id).select('+passwordHash');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+
+    // Vérifier l'ancien mot de passe
+    const isMatch = await user.matchPassword(currentPassword);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: 'L\'ancien mot de passe est incorrect'
+      });
+    }
+
+    // Mettre à jour le mot de passe
     await user.setPassword(newPassword);
     await user.save();
-    res.json({ success: true, message: 'Mot de passe changé avec succès' });
+
+    // Envoyer une notification (en arrière-plan)
+    try {
+      await sendPasswordResetEmail(user.email, 'Votre mot de passe a été modifié avec succès');
+    } catch (err) {
+      console.error('Erreur envoi email confirmation changement mot de passe:', err);
+    }
+
+    res.json({
+      success: true,
+      message: 'Votre mot de passe a été modifié avec succès'
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Erreur serveur lors du changement de mot de passe' });
+    console.error('Erreur changement mot de passe:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors du changement de mot de passe'
+    });
   }
 };

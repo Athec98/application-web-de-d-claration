@@ -28,7 +28,7 @@ export default function Login() {
     setLoading(true);
 
     try {
-      console.log('Tentative de connexion avec:', { identifier });
+      console.log('Tentative de connexion avec:', { identifier, userType });
       
       // Appel au service d'authentification
       const response = await authService.login(identifier, password);
@@ -49,8 +49,8 @@ export default function Login() {
         const redirectPath = ROLE_REDIRECTS[userRole] || ROLE_REDIRECTS[ROLES.PARENT];
         console.log(`Redirection vers ${redirectPath} pour le rôle ${userRole}`);
         
-        // Utiliser navigate pour la redirection
-        navigate(redirectPath, { replace: true });
+        // Rediriger vers le tableau de bord approprié
+        window.location.href = redirectPath;
       } else {
         throw new Error("Réponse de connexion invalide");
       }
@@ -62,7 +62,7 @@ export default function Login() {
         // Rediriger vers la page de vérification OTP si nécessaire
         const userId = error.userId || '';
         console.log('Redirection vers la page de vérification OTP pour l\'utilisateur:', userId);
-        navigate(`/verify-otp?userId=${userId}`, { replace: true });
+        window.location.href = `/verify-otp?userId=${userId}`;
       } else {
         // Afficher le message d'erreur à l'utilisateur
         const errorMessage = error.message || "Erreur de connexion. Veuillez réessayer.";
@@ -145,20 +145,24 @@ export default function Login() {
 
               {/* Bouton de connexion - BIEN VISIBLE */}
               <div className="pt-2">
-                <Button 
+                <button 
                   type="submit" 
-                  className="w-full text-white font-semibold py-2"
+                  className="w-full text-white font-semibold py-2 rounded-md"
                   style={{ 
                     backgroundColor: "#00853F",
                     height: '44px',
                     fontSize: '1rem',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    opacity: loading ? 0.7 : 1
+                    border: 'none',
+                    cursor: 'pointer',
+                    outline: 'none',
+                    transition: 'background-color 0.2s',
+                    opacity: loading ? 0.7 : 1,
+                    pointerEvents: loading ? 'none' : 'auto'
                   }}
                   disabled={loading}
                 >
                   {loading ? "Connexion en cours..." : "Se connecter"}
-                </Button>
+                </button>
               </div>
               
               <div className="text-center text-sm text-gray-600 mt-4">

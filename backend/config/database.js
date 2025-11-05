@@ -52,10 +52,18 @@ const connectDB = async () => {
     console.error('- Message:', error.message);
     console.error('- Code:', error.code);
     console.error('- Code Name:', error.codeName);
-    console.error('- Stack:', error.stack);
     
-    // Sortie avec un code d'erreur pour indiquer un échec
-    process.exit(1);
+    // Ne pas faire crasher l'application - permettre au serveur de démarrer
+    // L'utilisateur pourra voir l'erreur et corriger la configuration
+    console.error('\n⚠️  IMPORTANT: Le serveur continuera de fonctionner, mais les opérations de base de données échoueront.');
+    console.error('📝 Pour résoudre ce problème:');
+    console.error('   1. Vérifiez votre MONGODB_URI dans le fichier .env');
+    console.error('   2. Ajoutez votre IP actuelle à la whitelist MongoDB Atlas:');
+    console.error('      https://www.mongodb.com/docs/atlas/security-whitelist/');
+    console.error('   3. Ou autorisez toutes les IPs temporairement avec: 0.0.0.0/0 (⚠️ non sécurisé pour la production)');
+    
+    // Ne pas faire exit - permettre au serveur de démarrer
+    // throw error; // Lancer l'erreur pour que le serveur puisse la gérer
   }
 };
 

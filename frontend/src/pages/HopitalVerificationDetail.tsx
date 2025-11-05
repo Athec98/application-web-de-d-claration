@@ -75,7 +75,7 @@ export default function HopitalVerificationDetail() {
       await new Promise(resolve => setTimeout(resolve, 1000));
       toast.success("Certificat validé. La mairie a été notifiée.");
       setValidateDialogOpen(false);
-      setLocation("/hopital/dashboard");
+      window.location.href = "/hopital/dashboard";
     } catch (error) {
       toast.error("Erreur lors de la validation");
     } finally {
@@ -95,7 +95,7 @@ export default function HopitalVerificationDetail() {
       await new Promise(resolve => setTimeout(resolve, 1000));
       toast.success("Certificat rejeté. La mairie et le parent ont été notifiés.");
       setRejectDialogOpen(false);
-      setLocation("/hopital/dashboard");
+      window.location.href = "/hopital/dashboard";
     } catch (error) {
       toast.error("Erreur lors du rejet");
     } finally {
@@ -122,7 +122,9 @@ export default function HopitalVerificationDetail() {
             <Button 
               variant="ghost" 
               size="icon"
-              onClick={() => setLocation("/hopital/dashboard")}
+              onClick={() => {
+                window.location.href = "/hopital/dashboard";
+              }}
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
