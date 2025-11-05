@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,41 +11,10 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { Plus, FileText, Download, Bell, LogOut, User, Edit } from "lucide-react";
+import { Plus, FileText, Download, Bell, LogOut, User, Edit, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import NotificationsPanel from "@/components/NotificationsPanel";
-
-// Données simulées
-const mockDeclarations = [
-  {
-    id: 1,
-    childName: "Fatou Diop",
-    submittedDate: "2024-10-20",
-    status: "valide",
-  },
-  {
-    id: 2,
-    childName: "Mamadou Sall",
-    submittedDate: "2024-10-25",
-    status: "en_attente",
-  },
-  {
-    id: 3,
-    childName: "Aminata Ndiaye",
-    submittedDate: "2024-10-27",
-    status: "en_cours",
-  },
-];
-
-const mockCertificates = [
-  {
-    id: 1,
-    declarationId: 1,
-    childName: "Fatou Diop",
-    documentType: "Acte de naissance",
-    available: true,
-  },
-];
+import { declarationService, type Declaration } from "@/services/declarationService";
 
 const getStatusBadge = (status: string) => {
   const statusConfig: Record<string, { label: string; className: string }> = {
@@ -74,21 +43,52 @@ const getStatusBadge = (status: string) => {
 
 export default function ParentDashboard() {
   const [, setLocation] = useLocation();
+  const [declarations, setDeclarations] = useState<Declaration[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadDeclarations();
+  }, []);
+
+  const loadDeclarations = async () => {
+    try {
+      setLoading(true);
+      const data = await declarationService.getDeclarations();
+      setDeclarations(data);
+    } catch (error: any) {
+      console.error("Erreur lors du chargement des déclarations:", error);
+      toast.error("Erreur lors du chargement des déclarations");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogout = () => {
     // Nettoyer le localStorage
     localStorage.removeItem('token');
+    localStorage.removeItem('auth_token');
     localStorage.removeItem('user');
     localStorage.removeItem('tempUserId');
     
     // Rediriger immédiatement vers la page de connexion avec un rechargement complet
-    // Utiliser replace() pour éviter que l'utilisateur puisse revenir en arrière
     window.location.replace('/login');
   };
 
-  const handleDownload = (declarationId: number) => {
-    window.location.href = `/payment?type=certificate&declarationId=${declarationId}`;
+  const handleDownload = async (declaration: Declaration) => {
+    // Si l'acte de naissance est généré, rediriger vers la page de paiement
+    if (declaration.acteNaissance) {
+      window.location.href = `/payment?acteId=${declaration.acteNaissance}`;
+    } else {
+      toast.error("L'acte de naissance n'a pas encore été généré");
+    }
   };
+
+  const handleView = (declarationId: string) => {
+    window.location.href = `/declaration/${declarationId}`;
+  };
+
+  // Filtrer les déclarations avec acte de naissance généré
+  const declarationsWithActe = declarations.filter(d => d.acteNaissance);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -191,70 +191,78 @@ export default function ParentDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nom de l'enfant</TableHead>
-                  <TableHead>Date de soumission</TableHead>
-                  <TableHead>Statut</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {mockDeclarations.map((declaration) => (
-                  <TableRow key={declaration.id}>
-                    <TableCell className="font-medium">
-                      {declaration.childName}
-                    </TableCell>
-                    <TableCell>
-                      {new Date(declaration.submittedDate).toLocaleDateString('fr-FR')}
-                    </TableCell>
-                    <TableCell>
-                      {getStatusBadge(declaration.status)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end space-x-2">
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => {
-                            window.location.href = `/declaration/${declaration.id}`;
-                          }}
-                        >
-                          <FileText className="h-4 w-4 mr-2" />
-                          Voir
-                        </Button>
-                        {declaration.status === "rejete" && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => {
-                              window.location.href = `/edit-declaration/${declaration.id}`;
-                            }}
-                          >
-                            <Edit className="h-4 w-4 mr-2" />
-                            Modifier
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-senegal-green" />
+              </div>
+            ) : declarations.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                Aucune déclaration trouvée. Créez votre première déclaration de naissance.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nom de l'enfant</TableHead>
+                    <TableHead>Date de soumission</TableHead>
+                    <TableHead>Statut</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {declarations.map((declaration) => (
+                    <TableRow key={declaration._id}>
+                      <TableCell className="font-medium">
+                        {declaration.prenomEnfant} {declaration.nomEnfant}
+                      </TableCell>
+                      <TableCell>
+                        {new Date(declaration.createdAt).toLocaleDateString('fr-FR')}
+                      </TableCell>
+                      <TableCell>
+                        {getStatusBadge(declaration.statut)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end space-x-2">
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => handleView(declaration._id)}
+                          >
+                            <FileText className="h-4 w-4 mr-2" />
+                            Voir
+                          </Button>
+                          {declaration.statut === "rejetee" && (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => {
+                                window.location.href = `/edit-declaration/${declaration._id}`;
+                              }}
+                            >
+                              <Edit className="h-4 w-4 mr-2" />
+                              Modifier
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
 
         {/* Documents Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Mes Documents Disponibles</CardTitle>
-            <CardDescription>
-              Téléchargez vos actes de naissance (250 F par téléchargement)
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {mockCertificates.length > 0 ? (
+        {declarationsWithActe.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Mes Documents Disponibles</CardTitle>
+              <CardDescription>
+                Téléchargez vos actes de naissance (250 F par téléchargement)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -264,17 +272,17 @@ export default function ParentDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockCertificates.map((cert) => (
-                    <TableRow key={cert.id}>
+                  {declarationsWithActe.map((declaration) => (
+                    <TableRow key={declaration._id}>
                       <TableCell className="font-medium">
-                        {cert.childName}
+                        {declaration.prenomEnfant} {declaration.nomEnfant}
                       </TableCell>
-                      <TableCell>{cert.documentType}</TableCell>
+                      <TableCell>Acte de naissance</TableCell>
                       <TableCell className="text-right">
                         <Button 
                           size="sm"
                           className="bg-senegal-green hover:bg-senegal-green-dark"
-                          onClick={() => handleDownload(cert.declarationId || cert.id)}
+                          onClick={() => handleDownload(declaration)}
                         >
                           <Download className="h-4 w-4 mr-2" />
                           Télécharger (250 F)
@@ -284,13 +292,9 @@ export default function ParentDashboard() {
                   ))}
                 </TableBody>
               </Table>
-            ) : (
-              <p className="text-center text-gray-500 py-8">
-                Aucun document disponible pour le moment
-              </p>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </main>
 
       {/* Footer */}

@@ -324,12 +324,27 @@ exports.getSuggestedHospitals = async (req, res) => {
 // @access  Private (Mairie)
 exports.sendToHospital = async (req, res) => {
   try {
+    // Vérifier que l'ID est un ObjectId valide
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID de déclaration invalide'
+      });
+    }
+
     const { hopitalAssigne } = req.body;
 
     if (!hopitalAssigne) {
       return res.status(400).json({
         success: false,
         message: 'L\'hôpital à assigner est requis'
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(hopitalAssigne)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID d\'hôpital invalide'
       });
     }
 
@@ -424,6 +439,14 @@ exports.sendToHospital = async (req, res) => {
 // @access  Private (Mairie)
 exports.rejectDeclaration = async (req, res) => {
   try {
+    // Vérifier que l'ID est un ObjectId valide
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID de déclaration invalide'
+      });
+    }
+
     const { motifRejet } = req.body;
 
     if (!motifRejet) {
@@ -559,6 +582,14 @@ exports.validateCertificate = async (req, res) => {
 // @access  Private (Hôpital)
 exports.rejectCertificate = async (req, res) => {
   try {
+    // Vérifier que l'ID est un ObjectId valide
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID de déclaration invalide'
+      });
+    }
+
     const { motifRejetHopital } = req.body;
 
     if (!motifRejetHopital) {
