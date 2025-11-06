@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import axios from "axios";
 
 export default function ParentProfile() {
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
@@ -121,7 +121,7 @@ export default function ParentProfile() {
       const token = localStorage.getItem('token');
       if (!token) {
         toast.error("Vous devez être connecté");
-        setLocation("/login");
+        navigate("/login");
         return;
       }
 
@@ -172,7 +172,7 @@ export default function ParentProfile() {
       const token = localStorage.getItem('token');
       if (!token) {
         toast.error("Vous devez être connecté");
-        setLocation("/login");
+        navigate("/login");
         return;
       }
 

@@ -1,121 +1,168 @@
 #!/bin/bash
 
 # Script de déploiement pour CIVILE-APP
-# Usage: ./deploy.sh [docker|render|vercel]
+# Usage: ./deploy.sh [backend|frontend|all]
 
 set -e
 
-DEPLOY_TYPE=${1:-docker}
+echo "🚀 Déploiement CIVILE-APP"
+echo "=========================="
 
-echo "🚀 Déploiement de CIVILE-APP - Type: $DEPLOY_TYPE"
-echo ""
+# Couleurs
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-case $DEPLOY_TYPE in
-  docker)
-    echo "📦 Déploiement avec Docker..."
+# Fonction pour afficher les erreurs
+error() {
+    echo -e "${RED}❌ Erreur: $1${NC}"
+    exit 1
+}
+
+# Fonction pour afficher les succès
+success() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
+
+# Fonction pour afficher les warnings
+warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+# Vérifier que Node.js est installé
+if ! command -v node &> /dev/null; then
+    error "Node.js n'est pas installé"
+fi
+
+# Vérifier que npm est installé
+if ! command -v npm &> /dev/null; then
+    error "npm n'est pas installé"
+fi
+
+# Fonction pour déployer le backend
+deploy_backend() {
+    echo ""
+    echo "📦 Déploiement du Backend..."
     
-    # Vérifier que Docker est installé
-    if ! command -v docker &> /dev/null; then
-        echo "❌ Docker n'est pas installé. Veuillez l'installer d'abord."
-        exit 1
-    fi
+    cd backend
     
-    # Vérifier que docker-compose est installé
-    if ! command -v docker-compose &> /dev/null; then
-        echo "❌ Docker Compose n'est pas installé. Veuillez l'installer d'abord."
-        exit 1
-    fi
-    
-    # Vérifier le fichier .env
+    # Vérifier que .env existe
     if [ ! -f .env ]; then
-        echo "⚠️  Fichier .env non trouvé. Création d'un template..."
-        cat > .env << EOF
-# MongoDB
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/civile-app
-
-# JWT
-JWT_SECRET=changez_moi_en_production
-JWT_EXPIRE=30d
-
-# Email
-EMAIL_USER=your_email@gmail.com
-EMAIL_PASS=your_app_password
-
-# URLs
-FRONTEND_URL=http://localhost:3000
-API_URL=http://localhost:5000
-EOF
-        echo "✅ Fichier .env créé. Veuillez le modifier avec vos valeurs."
-        exit 1
+        warning ".env n'existe pas, création depuis .env.example..."
+        if [ -f .env.example ]; then
+            cp .env.example .env
+            warning "⚠️  Veuillez configurer les variables dans backend/.env"
+        else
+            error ".env.example n'existe pas"
+        fi
     fi
     
-    # Construire les images
-    echo "🔨 Construction des images Docker..."
-    docker-compose build
+    # Installer les dépendances
+    echo "📥 Installation des dépendances..."
+    npm install --production || error "Échec de l'installation des dépendances"
     
-    # Démarrer les services
-    echo "🚀 Démarrage des services..."
-    docker-compose up -d
+    # Créer les dossiers nécessaires
+    echo "📁 Création des dossiers..."
+    mkdir -p uploads/documents uploads/actes-naissance logs
     
-    # Attendre que les services soient prêts
-    echo "⏳ Attente du démarrage des services..."
-    sleep 10
+    # Vérifier la connexion MongoDB
+    echo "🔌 Vérification de la connexion MongoDB..."
+    node -e "require('dotenv').config(); const mongoose = require('mongoose'); mongoose.connect(process.env.MONGODB_URI).then(() => { console.log('✅ MongoDB connecté'); process.exit(0); }).catch(err => { console.error('❌ Erreur MongoDB:', err.message); process.exit(1); });" || warning "Impossible de vérifier MongoDB, mais le déploiement continue..."
     
-    # Vérifier le statut
-    echo "📊 Statut des services:"
-    docker-compose ps
-    
+    success "Backend prêt pour le déploiement"
+    cd ..
+}
+
+# Fonction pour déployer le frontend
+deploy_frontend() {
     echo ""
-    echo "✅ Déploiement terminé!"
-    echo "🌐 Frontend: http://localhost:3000"
-    echo "🌐 Backend: http://localhost:5000"
-    echo "📚 Documentation: http://localhost:5000/api-docs"
-    ;;
-    
-  render)
-    echo "☁️  Déploiement sur Render..."
-    echo ""
-    echo "Pour déployer sur Render:"
-    echo "1. Connectez votre dépôt GitHub à Render"
-    echo "2. Créez un nouveau service Web"
-    echo "3. Sélectionnez le dossier 'backend'"
-    echo "4. Configurez les variables d'environnement"
-    echo "5. Déployez!"
-    echo ""
-    echo "Voir DEPLOYMENT.md pour plus de détails."
-    ;;
-    
-  vercel)
-    echo "☁️  Déploiement du frontend sur Vercel..."
-    
-    # Vérifier que Vercel CLI est installé
-    if ! command -v vercel &> /dev/null; then
-        echo "📦 Installation de Vercel CLI..."
-        npm install -g vercel
-    fi
+    echo "📦 Déploiement du Frontend..."
     
     cd frontend
     
-    # Vérifier le fichier .env.production
-    if [ ! -f .env.production ]; then
-        echo "⚠️  Fichier .env.production non trouvé."
-        read -p "Entrez l'URL de votre backend API: " API_URL
-        echo "VITE_API_URL=$API_URL" > .env.production
-        echo "✅ Fichier .env.production créé."
+    # Vérifier que .env existe
+    if [ ! -f .env ]; then
+        warning ".env n'existe pas, création depuis .env.example..."
+        if [ -f .env.example ]; then
+            cp .env.example .env
+            warning "⚠️  Veuillez configurer VITE_API_URL dans frontend/.env"
+        fi
     fi
     
-    # Déployer
-    echo "🚀 Déploiement sur Vercel..."
-    vercel --prod
+    # Installer les dépendances
+    echo "📥 Installation des dépendances..."
+    npm install || error "Échec de l'installation des dépendances"
     
-    echo "✅ Déploiement terminé!"
-    ;;
+    # Build
+    echo "🔨 Build de l'application..."
+    npm run build || error "Échec du build"
     
-  *)
-    echo "❌ Type de déploiement invalide: $DEPLOY_TYPE"
-    echo ""
-    echo "Usage: ./deploy.sh [docker|render|vercel]"
-    exit 1
-    ;;
-esac
+    # Vérifier que dist/ existe
+    if [ ! -d "dist" ]; then
+        error "Le dossier dist/ n'a pas été créé"
+    fi
+    
+    success "Frontend buildé avec succès dans frontend/dist/"
+    cd ..
+}
 
+# Fonction pour déployer avec Docker
+deploy_docker() {
+    echo ""
+    echo "🐳 Déploiement avec Docker..."
+    
+    # Vérifier que Docker est installé
+    if ! command -v docker &> /dev/null; then
+        error "Docker n'est pas installé"
+    fi
+    
+    if ! command -v docker-compose &> /dev/null; then
+        error "docker-compose n'est pas installé"
+    fi
+    
+    # Vérifier que .env existe
+    if [ ! -f .env ]; then
+        warning ".env n'existe pas à la racine"
+        warning "Créez un fichier .env avec les variables nécessaires"
+    fi
+    
+    # Build et démarrer les conteneurs
+    echo "🔨 Build des images Docker..."
+    docker-compose build || error "Échec du build Docker"
+    
+    echo "🚀 Démarrage des conteneurs..."
+    docker-compose up -d || error "Échec du démarrage des conteneurs"
+    
+    success "Application déployée avec Docker"
+    echo "Backend: http://localhost:5000"
+    echo "Frontend: http://localhost:3000"
+}
+
+# Main
+case "${1:-all}" in
+    backend)
+        deploy_backend
+        ;;
+    frontend)
+        deploy_frontend
+        ;;
+    docker)
+        deploy_docker
+        ;;
+    all)
+        deploy_backend
+        deploy_frontend
+        success "✅ Déploiement terminé!"
+        echo ""
+        echo "📝 Prochaines étapes:"
+        echo "1. Configurez les variables d'environnement dans backend/.env et frontend/.env"
+        echo "2. Démarrez le backend: cd backend && npm start"
+        echo "3. Servez le frontend: cd frontend/dist && serve -s . -l 3000"
+        echo "   ou utilisez Nginx (voir DEPLOYMENT.md)"
+        ;;
+    *)
+        echo "Usage: ./deploy.sh [backend|frontend|docker|all]"
+        exit 1
+        ;;
+esac

@@ -4,14 +4,14 @@ FROM node:18-alpine
 # Définir le répertoire de travail
 WORKDIR /app
 
-# Copier les fichiers de dépendances
-COPY package*.json ./
+# Copier les fichiers de dépendances du backend
+COPY backend/package*.json ./
 
 # Installer les dépendances
 RUN npm ci --only=production
 
-# Copier le reste des fichiers de l'application
-COPY . .
+# Copier le reste des fichiers de l'application backend
+COPY backend/ .
 
 # Créer les répertoires nécessaires
 RUN mkdir -p uploads/documents uploads/actes-naissance logs

@@ -1,13 +1,16 @@
+# Configuration Render.com pour le backend
+# Placez ce fichier à la racine du repository
+# OU utilisez backend/render.yaml et définissez Root Directory = "backend" dans Render Dashboard
+
 services:
   - type: web
     name: civile-app-backend
     env: node
     plan: free
-    # IMPORTANT: Définir "Root Directory" à "backend" dans Render Dashboard
-    # Si Root Directory = "backend", alors:
+    # Si Root Directory dans Render Dashboard = "backend":
     buildCommand: npm install
     startCommand: npm start
-    # Si Root Directory = "." (racine), alors:
+    # Si Root Directory dans Render Dashboard = "." (racine):
     # buildCommand: cd backend && npm install
     # startCommand: cd backend && npm start
     healthCheckPath: /

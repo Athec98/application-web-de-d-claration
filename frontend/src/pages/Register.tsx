@@ -327,9 +327,9 @@ export default function Register() {
                 {fieldErrors.password ? (
                   <p className="text-sm text-red-600 mt-1">{fieldErrors.password}</p>
                 ) : (
-                  <p className="text-xs text-gray-500">
-                    Minimum 6 caractères
-                  </p>
+                <p className="text-xs text-gray-500">
+                  Minimum 6 caractères
+                </p>
                 )}
               </div>
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -370,7 +370,7 @@ export default function NewDeclaration() {
       if (!formData.hopitalAutreNom || formData.hopitalAutreNom.trim() === "") {
         newFieldErrors.hopitalAutreNom = "Le nom de l'hôpital est obligatoire lorsque vous sélectionnez 'Autre'";
         errors.push("Le nom de l'hôpital est obligatoire lorsque vous sélectionnez 'Autre'");
-      }
+    }
       if (!formData.hopitalAutreType) {
         newFieldErrors.hopitalAutreType = "Le type d'établissement est obligatoire";
         errors.push("Le type d'établissement est obligatoire");
@@ -493,8 +493,8 @@ export default function NewDeclaration() {
         }));
       }
       formDataToSend.append('certificatAccouchement', JSON.stringify({
-        numero: formData.certificatNumero,
-        dateDelivrance: formData.certificatDateDelivrance,
+          numero: formData.certificatNumero,
+          dateDelivrance: formData.certificatDateDelivrance,
       }));
 
       // Ajouter les fichiers

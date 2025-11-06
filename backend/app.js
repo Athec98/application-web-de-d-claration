@@ -132,7 +132,7 @@ app.get('/', (req, res) => res.json({
 // Middleware de gestion des erreurs (doit être en dernier)
 app.use(errorHandler);
 
-// Port du serveur - utiliser 5000 par défaut pour correspondre au proxy
+// Port du serveur - Render.com définit automatiquement PORT dans les variables d'environnement
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '0.0.0.0'; // Écouter sur toutes les interfaces pour être accessible depuis le réseau
 

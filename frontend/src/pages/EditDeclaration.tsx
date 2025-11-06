@@ -36,7 +36,7 @@ export default function EditDeclaration() {
   const [selectedMairie, setSelectedMairie] = useState<string>("");
   const [selectedHopital, setSelectedHopital] = useState<string>("autre");
   const [showHopitalAutre, setShowHopitalAutre] = useState(false);
-
+  
   const [formData, setFormData] = useState({
     // Informations enfant
     nomEnfant: "",
@@ -541,7 +541,7 @@ export default function EditDeclaration() {
       toast.error(`Veuillez corriger les erreurs suivantes : ${errors.join(", ")}`);
       return;
     }
-
+    
     setLoading(true);
 
     try {
@@ -678,13 +678,13 @@ export default function EditDeclaration() {
 
       <main className="container mx-auto px-4 py-8 max-w-4xl">
         {declaration?.statut === 'rejetee' && declaration.motifRejet && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertCircle className="h-4 w-4" />
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
             <AlertTitle>Déclaration rejetée</AlertTitle>
-            <AlertDescription>
+          <AlertDescription>
               <strong>Motif :</strong> {declaration.motifRejet}
-            </AlertDescription>
-          </Alert>
+          </AlertDescription>
+        </Alert>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -891,14 +891,14 @@ export default function EditDeclaration() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
+              <div className="space-y-2">
                   <Label htmlFor="lieuNaissance">Lieu de naissance *</Label>
-                  <Input
+                <Input
                     id="lieuNaissance"
                     name="lieuNaissance"
                     value={formData.lieuNaissance}
-                    onChange={handleChange}
-                    placeholder="Ex: Hôpital Principal de Dakar"
+                  onChange={handleChange}
+                  placeholder="Ex: Hôpital Principal de Dakar"
                     onBlur={(e) => {
                       if (!e.target.value.trim()) {
                         setFieldErrors({ ...fieldErrors, lieuNaissance: 'Le lieu de naissance est obligatoire' });
@@ -985,13 +985,13 @@ export default function EditDeclaration() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                <div className="space-y-2">
                     <Label htmlFor="professionPere">Profession</Label>
-                    <Input
+                  <Input
                       id="professionPere"
                       name="professionPere"
                       value={formData.professionPere}
-                      onChange={handleChange}
+                    onChange={handleChange}
                     />
                   </div>
                   <div className="space-y-2">
@@ -1001,7 +1001,7 @@ export default function EditDeclaration() {
                       name="nationalitePere"
                       value={formData.nationalitePere}
                       onChange={handleChange}
-                    />
+                  />
                   </div>
                 </div>
               </div>
@@ -1041,18 +1041,18 @@ export default function EditDeclaration() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                <div className="space-y-2">
                     <Label htmlFor="nomJeuneFilleMere">Nom de jeune fille</Label>
-                    <Input
+                  <Input
                       id="nomJeuneFilleMere"
                       name="nomJeuneFilleMere"
                       value={formData.nomJeuneFilleMere}
-                      onChange={handleChange}
-                    />
+                    onChange={handleChange}
+                  />
                     {fieldErrors.nomJeuneFilleMere && (
                       <p className="text-sm text-red-600 mt-1">{fieldErrors.nomJeuneFilleMere}</p>
                     )}
-                  </div>
+                </div>
                   <div className="space-y-2">
                     <Label htmlFor="professionMere">Profession</Label>
                     <Input
@@ -1061,7 +1061,7 @@ export default function EditDeclaration() {
                       value={formData.professionMere}
                       onChange={handleChange}
                     />
-                  </div>
+              </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="nationaliteMere">Nationalité</Label>
@@ -1112,16 +1112,16 @@ export default function EditDeclaration() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="hopitalAutreNom">Nom de l'hôpital *</Label>
-                      <Input
+                <Input
                         id="hopitalAutreNom"
                         name="hopitalAutreNom"
                         value={formData.hopitalAutreNom}
-                        onChange={handleChange}
-                      />
+                  onChange={handleChange}
+                />
                       {fieldErrors.hopitalAutreNom && (
                         <p className="text-sm text-red-600 mt-1">{fieldErrors.hopitalAutreNom}</p>
                       )}
-                    </div>
+              </div>
                     <div className="space-y-2">
                       <Label htmlFor="hopitalAutreType">Type *</Label>
                       <Select 

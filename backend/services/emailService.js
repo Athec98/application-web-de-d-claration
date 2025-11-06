@@ -59,34 +59,34 @@ exports.sendPasswordResetEmail = async (email, resetToken, resetUrl, notificatio
   try {
     // Si c'est une notification simple (pas de réinitialisation)
     if (notificationMessage && !resetUrl) {
-      const emailHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Notification CIVILE-APP</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #2c3e50;">Notification CIVILE-APP</h2>
+    const emailHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Notification CIVILE-APP</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #2c3e50;">Notification CIVILE-APP</h2>
             <p>${notificationMessage}</p>
-            <p style="margin-top: 30px; font-size: 12px; color: #7f8c8d;">
-              Si vous n'avez pas effectué cette action, veuillez contacter le support immédiatement.
-            </p>
-            <p style="margin-top: 20px; font-size: 12px; color: #7f8c8d;">
-              © ${new Date().getFullYear()} CIVILE-APP - Tous droits réservés
-            </p>
-          </div>
-        </body>
-        </html>
-      `;
+          <p style="margin-top: 30px; font-size: 12px; color: #7f8c8d;">
+            Si vous n'avez pas effectué cette action, veuillez contacter le support immédiatement.
+          </p>
+          <p style="margin-top: 20px; font-size: 12px; color: #7f8c8d;">
+            © ${new Date().getFullYear()} CIVILE-APP - Tous droits réservés
+          </p>
+        </div>
+      </body>
+      </html>
+    `;
 
-      await transporter.sendMail({
-        from: `"CIVILE-APP" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: 'Notification de changement de mot de passe - CIVILE-APP',
-        html: emailHtml
-      });
+    await transporter.sendMail({
+      from: `"CIVILE-APP" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Notification de changement de mot de passe - CIVILE-APP',
+      html: emailHtml
+    });
     } else {
       // Email de réinitialisation avec lien
       const emailHtml = `
