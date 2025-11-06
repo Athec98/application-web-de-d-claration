@@ -45,22 +45,27 @@ const upload = multer({
   fileFilter: fileFilter
 });
 
-// Routes Parent
+// IMPORTANT: Les routes spécifiques doivent être définies AVANT les routes avec paramètres
+// Sinon, Express.js peut capturer "my-declarations" comme un :id
+
+// Routes Parent - Routes spécifiques
 router.post('/', protect, authorize('parent'), upload.array('documents', 10), createDeclaration);
 router.get('/my-declarations', protect, authorize('parent'), getMyDeclarations);
-router.put('/:id', protect, authorize('parent'), upload.array('documents', 10), updateDeclaration);
 
-// Routes communes
-router.get('/:id', protect, getDeclarationById);
-
-// Routes Mairie
+// Routes Mairie - Routes spécifiques
 router.get('/mairie/all', protect, authorize('mairie'), getAllDeclarationsForMairie);
+
+// Routes Hôpital - Routes spécifiques
+router.get('/hopital/verifications', protect, authorize('hopital'), getVerificationRequests);
+
+// Routes avec paramètres spécifiques (doivent être avant la route générique /:id)
 router.put('/:id/send-to-hospital', protect, authorize('mairie'), sendToHospital);
 router.put('/:id/reject', protect, authorize('mairie'), rejectDeclaration);
 router.put('/:id/generate-certificate', protect, authorize('mairie'), generateBirthCertificate);
-
-// Routes Hôpital
-router.get('/hopital/verifications', protect, authorize('hopital'), getVerificationRequests);
 router.put('/:id/verify', protect, authorize('hopital'), verifyCertificate);
+router.put('/:id', protect, authorize('parent'), upload.array('documents', 10), updateDeclaration);
+
+// Route générique (doit être en dernier)
+router.get('/:id', protect, getDeclarationById);
 
 module.exports = router;

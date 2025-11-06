@@ -107,12 +107,10 @@ export default function NotificationsPanel({ trigger }: NotificationsPanelProps)
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
+      <SheetTrigger asChild={!!trigger}>
         {trigger || (
-          <Button 
-            variant="ghost" 
-            size="icon"
-            className="relative"
+          <button 
+            className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-10 w-10 relative"
           >
             <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
@@ -120,7 +118,7 @@ export default function NotificationsPanel({ trigger }: NotificationsPanelProps)
                 {unreadCount}
               </span>
             )}
-          </Button>
+          </button>
         )}
       </SheetTrigger>
       <SheetContent className="w-full sm:max-w-md">

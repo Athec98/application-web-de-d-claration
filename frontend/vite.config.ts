@@ -28,11 +28,17 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:5001',
+        target: 'http://localhost:5000',
         changeOrigin: true,
         secure: false,
         // Ne pas réécrire - garder /api pour correspondre aux routes backend
         // rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      '/uploads': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+        // Ne pas réécrire - garder /uploads pour correspondre au serveur statique
       },
     },
   },

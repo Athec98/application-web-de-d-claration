@@ -56,7 +56,25 @@ exports.getMyDeclarations = async (req, res, next) => {
 // @access  Private
 exports.getDeclarationById = async (req, res, next) => {
   try {
-    const declaration = await BirthDeclaration.findById(req.params.id)
+    const { id } = req.params;
+    
+    // Vérifier que ce n'est pas une route spécifique mal capturée
+    if (id === 'my-declarations' || id === 'mairie' || id === 'hopital') {
+      return res.status(400).json({
+        success: false,
+        message: 'Route non trouvée. Vérifiez l\'ordre des routes dans le routeur.'
+      });
+    }
+    
+    // Vérifier que l'ID est un ObjectId MongoDB valide (24 caractères hexadécimaux)
+    if (!id || !/^[0-9a-fA-F]{24}$/.test(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID de déclaration invalide. Format attendu: ObjectId MongoDB (24 caractères hexadécimaux)'
+      });
+    }
+    
+    const declaration = await BirthDeclaration.findById(id)
       .populate('parentId', 'firstName lastName phoneNumber email');
 
     if (!declaration) {
@@ -67,10 +85,41 @@ exports.getDeclarationById = async (req, res, next) => {
     }
 
     // Vérifier les permissions
-    if (req.user.role === 'parent' && declaration.parentId._id.toString() !== req.user.id) {
+    // Normaliser les IDs pour la comparaison
+    let declarationUserId;
+    if (declaration.parentId) {
+      // Si parentId est populé (objet), utiliser _id
+      declarationUserId = declaration.parentId._id 
+        ? declaration.parentId._id.toString() 
+        : declaration.parentId.toString();
+    } else if (declaration.user) {
+      // Fallback vers user si parentId n'existe pas
+      declarationUserId = declaration.user._id 
+        ? declaration.user._id.toString() 
+        : declaration.user.toString();
+    }
+    
+    const currentUserId = req.user.id?.toString ? req.user.id.toString() : req.user.id;
+    
+    console.log('Vérification permissions (declarationController.js):', {
+      role: req.user.role,
+      declarationUserId,
+      currentUserId,
+      match: declarationUserId === currentUserId,
+      parentId: declaration.parentId,
+      user: declaration.user
+    });
+    
+    if (req.user.role === 'parent' && declarationUserId && declarationUserId !== currentUserId) {
+      console.error('Accès refusé pour parent:', {
+        declarationUserId,
+        currentUserId,
+        declarationParentId: declaration.parentId,
+        reqUser: req.user
+      });
       return res.status(403).json({
         success: false,
-        message: 'Non autorisé'
+        message: 'Non autorisé - Vous ne pouvez accéder qu\'à vos propres déclarations'
       });
     }
 

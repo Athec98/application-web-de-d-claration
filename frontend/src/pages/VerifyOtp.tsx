@@ -16,6 +16,7 @@ export default function VerifyOtp() {
   const [resendLoading, setResendLoading] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [userId, setUserId] = useState("");
+  const [otpError, setOtpError] = useState<string>("");
 
   // Extraire l'ID utilisateur du localStorage
   useEffect(() => {
@@ -52,9 +53,26 @@ export default function VerifyOtp() {
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation(); // Empêcher la validation HTML5
     
-    if (!otp || otp.length !== 6) {
+    // Réinitialiser l'erreur
+    setOtpError("");
+    
+    if (!otp || otp.trim() === "") {
+      setOtpError("Le code de vérification est obligatoire");
+      toast.error("Veuillez entrer le code de vérification");
+      return;
+    }
+    
+    if (otp.length !== 6) {
+      setOtpError("Le code de vérification doit contenir exactement 6 chiffres");
       toast.error("Veuillez entrer un code OTP valide (6 chiffres)");
+      return;
+    }
+    
+    if (!/^\d{6}$/.test(otp)) {
+      setOtpError("Le code de vérification ne doit contenir que des chiffres");
+      toast.error("Le code de vérification ne doit contenir que des chiffres");
       return;
     }
 
@@ -173,12 +191,38 @@ export default function VerifyOtp() {
                   type="text"
                   placeholder="123456"
                   value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    setOtp(value);
+                    // Validation en temps réel
+                    if (value.length > 0 && value.length !== 6) {
+                      setOtpError("Le code de vérification doit contenir exactement 6 chiffres");
+                    } else if (value.length === 6 && !/^\d{6}$/.test(value)) {
+                      setOtpError("Le code de vérification ne doit contenir que des chiffres");
+                    } else {
+                      setOtpError("");
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const value = e.target.value;
+                    if (!value.trim()) {
+                      setOtpError("Le code de vérification est obligatoire");
+                    } else if (value.length !== 6) {
+                      setOtpError("Le code de vérification doit contenir exactement 6 chiffres");
+                    } else if (!/^\d{6}$/.test(value)) {
+                      setOtpError("Le code de vérification ne doit contenir que des chiffres");
+                    }
+                  }}
                   inputMode="numeric"
-                  pattern="\d{6}"
-                  required
                   autoFocus
                 />
+                {otpError ? (
+                  <p className="text-sm text-red-600 mt-1">{otpError}</p>
+                ) : (
+                  <p className="text-xs text-gray-500">
+                    Entrez le code à 6 chiffres reçu par email
+                  </p>
+                )}
               </div>
 
               <Button 

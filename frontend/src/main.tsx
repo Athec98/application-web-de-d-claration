@@ -5,6 +5,25 @@ import { StrictMode } from 'react';
 import App from "./App";
 import "./index.css";
 
+// Gestion globale des erreurs pour éviter les erreurs du navigateur
+window.addEventListener('error', (event) => {
+  // Empêcher l'affichage par défaut des erreurs dans la console du navigateur
+  // Les erreurs sont déjà gérées par ErrorBoundary et toast
+  if (process.env.NODE_ENV === 'production') {
+    event.preventDefault();
+  }
+  return false;
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  // Empêcher l'affichage par défaut des erreurs de promesses non gérées
+  // Les erreurs sont déjà gérées par les try-catch
+  if (process.env.NODE_ENV === 'production') {
+    event.preventDefault();
+  }
+  return false;
+});
+
 // React Query Devtools - Optionnel
 // Pour activer les devtools, installez: npm install @tanstack/react-query-devtools
 // Puis décommentez les lignes ci-dessous :

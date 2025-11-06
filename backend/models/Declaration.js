@@ -187,6 +187,8 @@ const declarationSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }
+}, {
+  timestamps: true // Active createdAt et updatedAt automatiquement
 });
 
 // Index pour les recherches fréquentes et vérification des doublons
@@ -209,8 +211,9 @@ try {
 
 declarationSchema.set('toJSON', {
   transform: (document, returnedObject) => {
+    // Garder _id ET id pour compatibilité
     returnedObject.id = returnedObject._id.toString();
-    delete returnedObject._id;
+    returnedObject._id = returnedObject._id.toString();
     delete returnedObject.__v;
   }
 });

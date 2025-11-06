@@ -94,11 +94,12 @@ exports.generateActeNaissance = async (req, res) => {
       });
     }
 
-    // Vérifier que le certificat est validé
-    if (declaration.statut !== 'certificat_valide') {
+    // Vérifier que le certificat est validé OU que la déclaration est validée
+    // Le statut peut être 'certificat_valide' (après validation hôpital) ou 'validee' (après validation mairie)
+    if (declaration.statut !== 'certificat_valide' && declaration.statut !== 'validee') {
       return res.status(400).json({
         success: false,
-        message: 'Le certificat d\'accouchement doit être validé avant de générer l\'acte de naissance'
+        message: 'Le certificat d\'accouchement doit être validé par l\'hôpital OU la déclaration doit être validée par la mairie avant de générer l\'acte de naissance'
       });
     }
 
@@ -177,8 +178,10 @@ exports.generateActeNaissance = async (req, res) => {
     await acteNaissance.save();
 
     // Mettre à jour la déclaration
+    // Le statut reste "certificat_valide" après génération de l'acte
+    // La mairie devra archiver le dossier manuellement pour permettre le téléchargement
     declaration.acteNaissance = acteNaissance._id;
-    declaration.statut = 'validee';
+    declaration.statut = 'certificat_valide'; // Ne pas passer directement à "validee"
     declaration.dateValidation = new Date();
     await declaration.save();
 
@@ -208,13 +211,87 @@ exports.generateActeNaissance = async (req, res) => {
   }
 };
 
-// Fonction pour générer le PDF
+// Fonction pour convertir un nombre en lettres (français)
+function nombreEnLettres(num) {
+  const unites = ['', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix',
+    'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize', 'dix-sept', 'dix-huit', 'dix-neuf'];
+  const dizaines = ['', '', 'vingt', 'trente', 'quarante', 'cinquante', 'soixante', 'soixante-dix', 'quatre-vingt', 'quatre-vingt-dix'];
+  
+  if (num === 0) return 'zéro';
+  if (num < 20) return unites[num];
+  if (num < 100) {
+    const dizaine = Math.floor(num / 10);
+    const unite = num % 10;
+    if (dizaine === 7 || dizaine === 9) {
+      return dizaines[dizaine] + '-' + unites[10 + (num % 10)];
+    }
+    if (unite === 0) return dizaines[dizaine];
+    if (unite === 1 && dizaine !== 8) return dizaines[dizaine] + '-et-' + unites[unite];
+    return dizaines[dizaine] + '-' + unites[unite];
+  }
+  if (num < 1000) {
+    const centaine = Math.floor(num / 100);
+    const reste = num % 100;
+    if (centaine === 1) {
+      return reste === 0 ? 'cent' : 'cent-' + nombreEnLettres(reste);
+    }
+    return reste === 0 ? unites[centaine] + '-cents' : unites[centaine] + '-cent-' + nombreEnLettres(reste);
+  }
+  return num.toString(); // Pour les nombres plus grands, retourner le nombre
+}
+
+// Fonction pour générer un timbre visuel (cercle avec texte)
+function drawTimbre(doc, x, y, size = 60) {
+  const centerX = x + size / 2;
+  const centerY = y + size / 2;
+  
+  // Cercle extérieur
+  doc.circle(centerX, centerY, size / 2)
+    .lineWidth(2)
+    .strokeColor('#000000');
+  
+  // Cercle intérieur
+  doc.circle(centerX, centerY, size / 2 - 5)
+    .lineWidth(1)
+    .strokeColor('#000000');
+  
+  // Texte au centre
+  doc.fontSize(8)
+    .font('Helvetica-Bold')
+    .text('TIMBRE', centerX - 15, centerY - 5, { width: 30, align: 'center' });
+}
+
+// Fonction pour générer un cachet (cercle avec texte autour)
+function drawCachet(doc, x, y, texte, size = 80) {
+  const centerX = x + size / 2;
+  const centerY = y + size / 2;
+  
+  // Cercle extérieur épais
+  doc.circle(centerX, centerY, size / 2)
+    .lineWidth(3)
+    .strokeColor('#FF0000');
+  
+  // Cercle intérieur
+  doc.circle(centerX, centerY, size / 2 - 8)
+    .lineWidth(1)
+    .strokeColor('#FF0000');
+  
+  // Texte au centre (simplifié)
+  doc.fontSize(10)
+    .font('Helvetica-Bold')
+    .fillColor('#FF0000')
+    .text(texte.substring(0, 15), centerX - 30, centerY - 5, { width: 60, align: 'center' });
+  
+  doc.fillColor('#000000'); // Remettre la couleur par défaut
+}
+
+// Fonction pour générer le PDF avec le design officiel sénégalais
 async function generatePDF(acteNaissance, declaration) {
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
         size: 'A4',
-        margin: 50
+        margins: { top: 40, bottom: 40, left: 40, right: 40 }
       });
 
       const buffers = [];
@@ -225,97 +302,307 @@ async function generatePDF(acteNaissance, declaration) {
       });
       doc.on('error', reject);
 
-      // En-tête
-      doc.fontSize(16).font('Helvetica-Bold')
-        .text('RÉPUBLIQUE DU SÉNÉGAL', { align: 'center' });
-      doc.moveDown(0.5);
-      doc.fontSize(12).font('Helvetica')
-        .text('MINISTÈRE DE L\'INTÉRIEUR', { align: 'center' });
-      doc.moveDown(0.5);
-      doc.text(`MAIRIE DE ${declaration.mairie.nom.toUpperCase()}`, { align: 'center' });
-      doc.moveDown(1);
+      const pageWidth = doc.page.width;
+      const pageHeight = doc.page.height;
+      const margin = 40;
+      const contentWidth = pageWidth - (margin * 2);
 
-      // Titre
+      // Dessiner les lignes de grille (simulation du formulaire)
+      const drawGridLines = () => {
+        doc.strokeColor('#CCCCCC').lineWidth(0.5);
+        // Lignes horizontales
+        for (let y = margin; y < pageHeight - margin; y += 20) {
+          doc.moveTo(margin, y).lineTo(pageWidth - margin, y).stroke();
+        }
+        // Lignes verticales
+        for (let x = margin; x < pageWidth - margin; x += 20) {
+          doc.moveTo(x, margin).lineTo(x, pageHeight - margin).stroke();
+        }
+        doc.strokeColor('#000000').lineWidth(1);
+      };
+
+      // Lignes de bordure principales
+      doc.rect(margin, margin, contentWidth, pageHeight - (margin * 2))
+        .lineWidth(1.5)
+        .stroke();
+
+      let currentY = margin + 10;
+
+      // ===== EN-TÊTE =====
+      // Section droite - République du Sénégal
       doc.fontSize(14).font('Helvetica-Bold')
-        .text('ACTE DE NAISSANCE', { align: 'center' });
-      doc.moveDown(1);
-
-      // Numéro d'acte et numéro de registre
+        .text('RÉPUBLIQUE DU SÉNÉGAL', pageWidth / 2 - 50, currentY, { width: 100, align: 'center' });
+      currentY += 15;
+      
       doc.fontSize(10).font('Helvetica')
-        .text(`Numéro d'acte: ${acteNaissance.numeroActe}`, { align: 'left' });
-      doc.text(`Numéro de registre: ${acteNaissance.numeroRegistre}`, { align: 'left' });
-      doc.text(`Année: ${acteNaissance.annee}`, { align: 'left' });
-      doc.moveDown(1);
+        .text('UN PEUPLE - UN BUT - UNE FOI', pageWidth / 2 - 60, currentY, { width: 120, align: 'center' });
+      currentY += 12;
+      
+      doc.fontSize(12).font('Helvetica-Bold')
+        .text('ETAT CIVIL', pageWidth / 2 - 40, currentY, { width: 80, align: 'center' });
+      currentY += 12;
+      
+      doc.fontSize(9).font('Helvetica')
+        .text('CENTRE DE (1)', pageWidth / 2 - 30, currentY, { width: 60, align: 'center' });
+      currentY += 25;
 
-      // Contenu de l'acte
-      doc.fontSize(11).font('Helvetica')
-        .text(`Le ${new Date(acteNaissance.dateNaissance).toLocaleDateString('fr-FR', { 
+      // Section gauche - Informations géographiques
+      const leftX = margin + 10;
+      const rightX = pageWidth / 2 + 20;
+      
+      doc.fontSize(9).font('Helvetica-Bold')
+        .text('RÉGION:', leftX, margin + 10);
+      doc.moveTo(leftX + 50, margin + 15).lineTo(leftX + 250, margin + 15).stroke();
+      if (declaration.region && declaration.region.nom) {
+        doc.fontSize(9).font('Helvetica')
+          .text(declaration.region.nom.toUpperCase(), leftX + 52, margin + 10);
+      }
+      
+      doc.fontSize(9).font('Helvetica-Bold')
+        .text('DÉPARTEMENT:', leftX, margin + 25);
+      doc.moveTo(leftX + 70, margin + 30).lineTo(leftX + 250, margin + 30).stroke();
+      if (declaration.departement && declaration.departement.nom) {
+        doc.fontSize(9).font('Helvetica')
+          .text(declaration.departement.nom.toUpperCase(), leftX + 72, margin + 25);
+      }
+      
+      doc.fontSize(9).font('Helvetica-Bold')
+        .text('ARRONDISSEMENT:', leftX, margin + 40);
+      doc.moveTo(leftX + 90, margin + 45).lineTo(leftX + 250, margin + 45).stroke();
+      
+      doc.fontSize(9).font('Helvetica-Bold')
+        .text('COLLECTIVITÉ LOCALE', leftX, margin + 55);
+      doc.fontSize(7).font('Helvetica')
+        .text('(Commune ou Communauté Rurale)', leftX, margin + 62);
+      doc.moveTo(leftX, margin + 68).lineTo(leftX + 250, margin + 68).stroke();
+      if (declaration.commune && declaration.commune.nom) {
+        doc.fontSize(9).font('Helvetica')
+          .text(declaration.commune.nom.toUpperCase(), leftX + 2, margin + 55);
+      } else if (declaration.mairie && declaration.mairie.nom) {
+        doc.fontSize(9).font('Helvetica')
+          .text(declaration.mairie.nom.toUpperCase(), leftX + 2, margin + 55);
+      }
+
+      currentY = margin + 80;
+
+      // ===== TITRE PRINCIPAL =====
+      doc.fontSize(12).font('Helvetica-Bold')
+        .text('EXTRAIT du REGISTRE DES ACTES de NAISSANCE', margin + 10, currentY, { 
+          width: contentWidth - 20, 
+          align: 'center' 
+        });
+      currentY += 25;
+
+      // ===== INFORMATIONS D'ENREGISTREMENT =====
+      const yearText = nombreEnLettres(acteNaissance.annee);
+      const numeroRegistreText = nombreEnLettres(parseInt(acteNaissance.numeroRegistre.split('-').pop()) || 1);
+      
+      doc.fontSize(9).font('Helvetica')
+        .text('Pour l\'année (2)', leftX, currentY);
+      doc.moveTo(leftX + 80, currentY + 5).lineTo(leftX + 200, currentY + 5).stroke();
+      doc.fontSize(9).font('Helvetica')
+        .text(yearText, leftX + 82, currentY);
+      doc.fontSize(7).font('Helvetica')
+        .text('(en lettres)', leftX + 82, currentY + 8);
+      
+      doc.fontSize(9).font('Helvetica')
+        .text('N° dans le Registre', leftX, currentY + 20);
+      doc.moveTo(leftX + 85, currentY + 25).lineTo(leftX + 200, currentY + 25).stroke();
+      doc.fontSize(9).font('Helvetica')
+        .text(numeroRegistreText, leftX + 87, currentY + 20);
+      doc.fontSize(7).font('Helvetica')
+        .text('(en lettres)', leftX + 87, currentY + 28);
+
+      // Section droite - Numéro en chiffres
+      doc.fontSize(9).font('Helvetica')
+        .text('AN-', rightX, currentY);
+      doc.moveTo(rightX + 25, currentY + 5).lineTo(rightX + 100, currentY + 5).stroke();
+      doc.fontSize(9).font('Helvetica')
+        .text(acteNaissance.annee.toString(), rightX + 27, currentY);
+      
+      doc.fontSize(9).font('Helvetica')
+        .text('N° dans le Registre en chiffres', rightX, currentY + 20);
+      doc.moveTo(rightX, currentY + 25).lineTo(rightX + 100, currentY + 25).stroke();
+      const numeroChiffres = acteNaissance.numeroRegistre.split('-').pop() || '000001';
+      doc.fontSize(9).font('Helvetica')
+        .text(numeroChiffres, rightX + 2, currentY + 20);
+
+      currentY += 50;
+
+      // ===== CONTENU DE L'ACTE =====
+      const dateNaissance = new Date(acteNaissance.dateNaissance);
+      const jour = dateNaissance.getDate();
+      const mois = dateNaissance.toLocaleDateString('fr-FR', { month: 'long' });
+      const annee = dateNaissance.getFullYear();
+      const heure = acteNaissance.heureNaissance || '--:--';
+      
+      doc.fontSize(10).font('Helvetica')
+        .text(`Le ${jour} ${mois} ${annee} à ${heure} heures, est né${acteNaissance.sexe === 'F' ? 'e' : ''} à ${acteNaissance.lieuNaissance}:`, 
+          margin + 10, currentY, { width: contentWidth - 20, align: 'justify' });
+      currentY += 20;
+
+      // Prénoms et nom de l'enfant
+      doc.fontSize(9).font('Helvetica')
+        .text('PRENOMS', leftX, currentY);
+      doc.moveTo(leftX + 50, currentY + 5).lineTo(leftX + 200, currentY + 5).stroke();
+      doc.fontSize(10).font('Helvetica-Bold')
+        .text(acteNaissance.prenomEnfant.toUpperCase(), leftX + 52, currentY);
+      
+      doc.fontSize(9).font('Helvetica')
+        .text('NOM DE FAMILLE', rightX, currentY);
+      doc.moveTo(rightX + 80, currentY + 5).lineTo(rightX + 200, currentY + 5).stroke();
+      doc.fontSize(10).font('Helvetica-Bold')
+        .text(acteNaissance.nomEnfant.toUpperCase(), rightX + 82, currentY);
+      currentY += 25;
+
+      // Sexe
+      doc.fontSize(9).font('Helvetica')
+        .text('un enfant de sexe', leftX, currentY);
+      doc.fontSize(9).font('Helvetica-Bold')
+        .text('M', leftX + 80, currentY);
+      doc.rect(leftX + 95, currentY - 2, 10, 10).stroke();
+      if (acteNaissance.sexe === 'M') {
+        doc.fontSize(8).text('X', leftX + 97, currentY);
+      }
+      doc.fontSize(9).font('Helvetica-Bold')
+        .text('F', leftX + 115, currentY);
+      doc.rect(leftX + 130, currentY - 2, 10, 10).stroke();
+      if (acteNaissance.sexe === 'F') {
+        doc.fontSize(8).text('X', leftX + 132, currentY);
+      }
+      doc.fontSize(7).font('Helvetica')
+        .text('(4)', leftX + 145, currentY);
+      currentY += 20;
+
+      // Lieu de naissance
+      doc.fontSize(9).font('Helvetica')
+        .text('Lieu de naissance', leftX, currentY);
+      doc.moveTo(leftX + 90, currentY + 5).lineTo(leftX + 400, currentY + 5).stroke();
+      doc.fontSize(9).font('Helvetica')
+        .text(acteNaissance.lieuNaissance.toUpperCase(), leftX + 92, currentY);
+      currentY += 20;
+
+      // Pays de naissance (pour les naissances à l'étranger)
+      doc.fontSize(8).font('Helvetica')
+        .text('Pays de naissance pour les naissances à l\'étranger (3)', leftX, currentY);
+      doc.moveTo(leftX, currentY + 5).lineTo(leftX + 200, currentY + 5).stroke();
+      doc.fontSize(7).font('Helvetica')
+        .text('(écrite en majuscules le lieu de naissance, les prénoms et le nom)', leftX, currentY + 8);
+      currentY += 25;
+
+      // ===== INFORMATIONS DES PARENTS =====
+      doc.fontSize(9).font('Helvetica')
+        .text('Né de:', leftX, currentY);
+      currentY += 15;
+
+      // Père
+      if (acteNaissance.prenomPere || acteNaissance.nomPere) {
+        doc.fontSize(9).font('Helvetica')
+          .text('PRENOMS DU PERE', leftX, currentY);
+        doc.moveTo(leftX + 85, currentY + 5).lineTo(leftX + 250, currentY + 5).stroke();
+        doc.fontSize(9).font('Helvetica')
+          .text((acteNaissance.prenomPere || '').toUpperCase(), leftX + 87, currentY);
+        
+        doc.fontSize(9).font('Helvetica')
+          .text('NOM DE FAMILLE', rightX, currentY);
+        doc.moveTo(rightX + 80, currentY + 5).lineTo(rightX + 200, currentY + 5).stroke();
+        doc.fontSize(9).font('Helvetica')
+          .text((acteNaissance.nomPere || '').toUpperCase(), rightX + 82, currentY);
+        currentY += 15;
+      }
+
+      // Mère
+      if (acteNaissance.prenomMere || acteNaissance.nomMere) {
+        doc.fontSize(9).font('Helvetica')
+          .text('PRENOMS DE LA MERE', leftX, currentY);
+        doc.moveTo(leftX + 95, currentY + 5).lineTo(leftX + 250, currentY + 5).stroke();
+        doc.fontSize(9).font('Helvetica')
+          .text((acteNaissance.prenomMere || '').toUpperCase(), leftX + 97, currentY);
+        
+        doc.fontSize(9).font('Helvetica')
+          .text('NOM DE FAMILLE DE LA MERE', rightX, currentY);
+        doc.moveTo(rightX + 130, currentY + 5).lineTo(rightX + 200, currentY + 5).stroke();
+        doc.fontSize(9).font('Helvetica')
+          .text((acteNaissance.nomMere || '').toUpperCase(), rightX + 132, currentY);
+        currentY += 25;
+      }
+
+      // ===== JUGEMENT D'AUTORISATION (section gauche) =====
+      const jugementY = currentY;
+      doc.fontSize(8).font('Helvetica-Bold')
+        .text('JUGEMENT D\'AUTORISATION D\'INSCRIPTION', leftX, jugementY);
+      doc.fontSize(8).font('Helvetica')
+        .text('(EX JUGEMENT SUPPLETIF)', leftX, jugementY + 8);
+      
+      doc.fontSize(8).font('Helvetica')
+        .text('Délivré par le juge de Paix de', leftX, jugementY + 20);
+      doc.moveTo(leftX, jugementY + 25).lineTo(leftX + 200, jugementY + 25).stroke();
+      
+      doc.fontSize(8).font('Helvetica')
+        .text('le', leftX, jugementY + 30);
+      doc.moveTo(leftX + 20, jugementY + 35).lineTo(leftX + 200, jugementY + 35).stroke();
+      currentY = jugementY + 60;
+
+      // ===== TIMBRE ET CACHET =====
+      // Zone pour le timbre (en bas à gauche)
+      const timbreY = pageHeight - margin - 120;
+      const timbreX = margin + 20;
+      
+      // Dessiner le timbre (cercle avec texte)
+      drawTimbre(doc, timbreX, timbreY, 60);
+      
+      // Texte du timbre numérique en dessous
+      doc.fontSize(7).font('Helvetica')
+        .text(`Timbre: ${acteNaissance.timbre}`, timbreX, timbreY + 65, { width: 60, align: 'center' });
+
+      // Zone pour le cachet (en bas au centre)
+      const cachetX = pageWidth / 2 - 40;
+      const cachetY = pageHeight - margin - 120;
+      
+      // Dessiner le cachet (cercle rouge)
+      const cachetText = declaration.mairie?.nom?.substring(0, 10) || 'MAIRIE';
+      drawCachet(doc, cachetX, cachetY, cachetText, 80);
+      
+      // Texte du cachet numérique en dessous
+      doc.fontSize(7).font('Helvetica')
+        .fillColor('#000000')
+        .text(`Cachet: ${acteNaissance.cachetNumerique}`, cachetX, cachetY + 85, { width: 80, align: 'center' });
+
+      // ===== SIGNATURE ET DATE =====
+      // Date de délivrance (en haut à droite)
+      const dateDelivrance = new Date();
+      doc.fontSize(9).font('Helvetica')
+        .text(`Délivré le ${dateDelivrance.toLocaleDateString('fr-FR', { 
           day: '2-digit', 
           month: 'long', 
           year: 'numeric' 
-        })} à ${acteNaissance.heureNaissance || '--:--'} heures, est né${acteNaissance.sexe === 'F' ? 'e' : ''} à ${acteNaissance.lieuNaissance}:`, { align: 'justify' });
-      doc.moveDown(0.5);
+        })}`, pageWidth - margin - 150, margin + 10, { width: 150, align: 'right' });
 
-      // Nom de l'enfant
-      doc.fontSize(12).font('Helvetica-Bold')
-        .text(`${acteNaissance.prenomEnfant} ${acteNaissance.nomEnfant}`, { align: 'center' });
-      doc.moveDown(1);
+      // Signature (en bas à droite)
+      const signatureY = pageHeight - margin - 60;
+      const signatureX = pageWidth - margin - 150;
+      
+      // Ligne de signature
+      doc.moveTo(signatureX, signatureY).lineTo(signatureX + 120, signatureY).stroke();
+      
+      doc.fontSize(9).font('Helvetica-Bold')
+        .text('Le Maire', signatureX, signatureY - 15, { width: 120, align: 'center' });
+      
+      // Zone pour la signature (rectangle)
+      doc.rect(signatureX + 130, signatureY - 30, 60, 30)
+        .lineWidth(1)
+        .stroke();
+      doc.fontSize(7).font('Helvetica')
+        .text('Signature', signatureX + 130, signatureY - 25, { width: 60, align: 'center' });
 
-      // Informations sur l'enfant
-      doc.fontSize(11).font('Helvetica')
-        .text(`Sexe: ${acteNaissance.sexe === 'M' ? 'Masculin' : 'Féminin'}`, { align: 'left' });
-      doc.moveDown(0.5);
-
-      // Informations sur les parents
-      doc.text('Né de:', { align: 'left' });
-      doc.moveDown(0.3);
-      if (acteNaissance.prenomPere || acteNaissance.nomPere) {
-        doc.text(`Père: ${acteNaissance.prenomPere || ''} ${acteNaissance.nomPere || ''}`, { align: 'left' });
-        if (acteNaissance.professionPere) {
-          doc.text(`Profession: ${acteNaissance.professionPere}`, { align: 'left', indent: 20 });
-        }
-        if (acteNaissance.nationalitePere) {
-          doc.text(`Nationalité: ${acteNaissance.nationalitePere}`, { align: 'left', indent: 20 });
-        }
-        doc.moveDown(0.5);
-      }
-
-      if (acteNaissance.prenomMere || acteNaissance.nomMere) {
-        doc.text(`Mère: ${acteNaissance.prenomMere || ''} ${acteNaissance.nomMere || ''}`, { align: 'left' });
-        if (acteNaissance.nomJeuneFilleMere) {
-          doc.text(`Née: ${acteNaissance.nomJeuneFilleMere}`, { align: 'left', indent: 20 });
-        }
-        if (acteNaissance.professionMere) {
-          doc.text(`Profession: ${acteNaissance.professionMere}`, { align: 'left', indent: 20 });
-        }
-        if (acteNaissance.nationaliteMere) {
-          doc.text(`Nationalité: ${acteNaissance.nationaliteMere}`, { align: 'left', indent: 20 });
-        }
-        doc.moveDown(0.5);
-      }
-
-      // Timbre et cachet
-      doc.moveDown(1);
-      doc.fontSize(9).font('Helvetica')
-        .text(`Timbre: ${acteNaissance.timbre}`, { align: 'left' });
-      doc.text(`Cachet numérique: ${acteNaissance.cachetNumerique}`, { align: 'left' });
-      doc.moveDown(1);
-
-      // Date de délivrance
-      doc.text(`Délivré le ${new Date().toLocaleDateString('fr-FR', { 
-        day: '2-digit', 
-        month: 'long', 
-        year: 'numeric' 
-      })}`, { align: 'right' });
-      doc.moveDown(1);
-
-      // Signature
-      doc.moveDown(2);
-      doc.text('Le Maire', { align: 'right' });
-      doc.text(`_________________________`, { align: 'right' });
+      // ===== NUMÉRO D'ACTE (en bas) =====
+      doc.fontSize(8).font('Helvetica')
+        .fillColor('#666666')
+        .text(`Numéro d'acte: ${acteNaissance.numeroActe}`, margin + 10, pageHeight - margin - 30, { width: contentWidth - 20, align: 'center' });
 
       doc.end();
     } catch (error) {
+      console.error('Erreur lors de la génération du PDF:', error);
       reject(error);
     }
   });
@@ -427,8 +714,9 @@ exports.initiatePayment = async (req, res) => {
         modePaiement,
         referencePaiement,
         statutPaiement: 'en_attente',
-        // URL de paiement (à intégrer avec les services de paiement réels)
-        paymentUrl: `/api/actes-naissance/payment/confirm/${referencePaiement}`
+        // URL de paiement externe (à intégrer avec les services de paiement réels)
+        // Pour l'instant, null car on simule le paiement directement
+        paymentUrl: null
       }
     });
   } catch (error) {
@@ -543,6 +831,14 @@ exports.downloadActeNaissance = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: 'Non autorisé'
+      });
+    }
+
+    // Vérifier que le statut est "validee" ou "archivee"
+    if (declaration.statut !== 'validee' && declaration.statut !== 'archivee') {
+      return res.status(400).json({
+        success: false,
+        message: 'Le dossier doit être validé et archivé avant de pouvoir télécharger l\'acte de naissance'
       });
     }
 

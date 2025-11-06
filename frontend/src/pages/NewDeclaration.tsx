@@ -9,11 +9,13 @@ import { ArrowLeft, Upload, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { geographicService, type Region, type Departement, type Commune, type Mairie, type Hopital } from "@/services/geographicService";
 import { declarationService, type DeclarationData } from "@/services/declarationService";
+import { isValidName, isValidNumber, isValidAddress, isValidTime, isValidWeight, isValidHeight } from "@/utils/validation";
 
 export default function NewDeclaration() {
   const [, setLocation] = useLocation();
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // Données géographiques
   const [regions, setRegions] = useState<Region[]>([]);
@@ -114,7 +116,6 @@ export default function NewDeclaration() {
       setRegions(data);
     } catch (error: any) {
       toast.error("Erreur lors du chargement des régions");
-      console.error(error);
     } finally {
       setLoadingData(false);
     }
@@ -129,7 +130,6 @@ export default function NewDeclaration() {
         toast.info("Aucun département trouvé pour cette région");
       }
     } catch (error: any) {
-      console.error("Erreur lors du chargement des départements:", error);
       const errorMessage = error.response?.data?.message || error.message || "Erreur lors du chargement des départements";
       toast.error(errorMessage);
       setDepartements([]);
@@ -181,21 +181,71 @@ export default function NewDeclaration() {
 
   const loadHopitaux = async (regionId: string) => {
     try {
+      setLoadingData(true);
       const data = await geographicService.getHopitaux({ 
         region: regionId, 
         delivreCertificat: true 
       });
       setHopitaux(data);
+      if (data.length === 0) {
+        console.log("Aucun hôpital trouvé pour cette région");
+        toast.info("Aucun hôpital trouvé pour cette région. Vous pouvez utiliser l'option 'Autre' pour saisir les détails manuellement.");
+      } else {
+        console.log(`${data.length} hôpital(aux) trouvé(s)`);
+      }
     } catch (error: any) {
-      console.error("Erreur lors du chargement des hôpitaux", error);
+      console.error("Erreur lors du chargement des hôpitaux:", error);
+      const errorMessage = error.response?.data?.message || error.message || "Erreur lors du chargement des hôpitaux";
+      toast.error(errorMessage);
+      setHopitaux([]);
+    } finally {
+      setLoadingData(false);
     }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fieldName = e.target.name;
+    const value = e.target.value;
+    
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [fieldName]: value,
     });
+
+    // Validation en temps réel
+    let error = '';
+    
+    if (fieldName === 'prenomEnfant' || fieldName === 'nomEnfant' || fieldName === 'nomPere' || fieldName === 'prenomPere' || fieldName === 'nomMere' || fieldName === 'prenomMere' || fieldName === 'nomJeuneFilleMere') {
+      if (value.trim() && !isValidName(value)) {
+        error = 'Ce champ ne doit contenir que des lettres, espaces, tirets et apostrophes';
+      }
+    } else if (fieldName === 'certificatNumero') {
+      if (value.trim() && !isValidNumber(value)) {
+        error = 'Le numéro du certificat ne doit contenir que des chiffres';
+      }
+    } else if (fieldName === 'lieuNaissance') {
+      if (value.trim() && !isValidAddress(value)) {
+        error = 'Le lieu de naissance doit contenir au moins 5 caractères';
+      }
+    } else if (fieldName === 'poids') {
+      if (value.trim() && !isValidWeight(value)) {
+        error = 'Le poids doit être un nombre positif entre 0 et 10 kg';
+      }
+    } else if (fieldName === 'taille') {
+      if (value.trim() && !isValidHeight(value)) {
+        error = 'La taille doit être un nombre positif entre 0 et 100 cm';
+      }
+    } else if (fieldName === 'heureNaissance') {
+      if (value.trim() && !isValidTime(value)) {
+        error = 'L\'heure de naissance doit être au format HH:MM (ex: 14:30)';
+      }
+    } else if (fieldName === 'hopitalAutreNom') {
+      if (value.trim() && value.trim().length < 2) {
+        error = 'Le nom de l\'hôpital doit contenir au moins 2 caractères';
+      }
+    }
+
+    setFieldErrors({ ...fieldErrors, [fieldName]: error });
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: keyof typeof documents) => {
@@ -225,75 +275,249 @@ export default function NewDeclaration() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation(); // Empêcher la validation HTML5
     
-    // Validations
-    if (!selectedRegion || !selectedDepartement || !selectedMairie) {
-      toast.error("Veuillez sélectionner la région, le département et la mairie");
-      return;
+    // Réinitialiser les erreurs de champ
+    const newFieldErrors: Record<string, string> = {};
+    const errors: string[] = [];
+
+    // Validations géographiques
+    if (!selectedRegion) {
+      newFieldErrors.region = "La région est obligatoire";
+      errors.push("La région est obligatoire");
+    }
+    if (!selectedDepartement) {
+      newFieldErrors.departement = "Le département est obligatoire";
+      errors.push("Le département est obligatoire");
+    }
+    if (!selectedMairie) {
+      newFieldErrors.mairie = "La mairie est obligatoire";
+      errors.push("La mairie est obligatoire");
     }
 
-    if (!selectedHopital || (selectedHopital === "autre" && !formData.hopitalAutreNom)) {
-      toast.error("Veuillez sélectionner ou renseigner l'hôpital d'accouchement");
-      return;
+    // Validations enfant
+    if (!formData.prenomEnfant || formData.prenomEnfant.trim() === "") {
+      newFieldErrors.prenomEnfant = "Le prénom de l'enfant est obligatoire";
+      errors.push("Le prénom de l'enfant est obligatoire");
+    } else if (!isValidName(formData.prenomEnfant)) {
+      newFieldErrors.prenomEnfant = "Le prénom de l'enfant ne doit contenir que des lettres, espaces, tirets et apostrophes";
+      errors.push("Le prénom de l'enfant ne doit contenir que des lettres, espaces, tirets et apostrophes");
+    }
+    if (!formData.nomEnfant || formData.nomEnfant.trim() === "") {
+      newFieldErrors.nomEnfant = "Le nom de l'enfant est obligatoire";
+      errors.push("Le nom de l'enfant est obligatoire");
+    } else if (!isValidName(formData.nomEnfant)) {
+      newFieldErrors.nomEnfant = "Le nom de l'enfant ne doit contenir que des lettres, espaces, tirets et apostrophes";
+      errors.push("Le nom de l'enfant ne doit contenir que des lettres, espaces, tirets et apostrophes");
+    }
+    if (!formData.sexe) {
+      newFieldErrors.sexe = "Le sexe de l'enfant est obligatoire";
+      errors.push("Le sexe de l'enfant est obligatoire");
+    }
+    if (!formData.dateNaissance) {
+      newFieldErrors.dateNaissance = "La date de naissance est obligatoire";
+      errors.push("La date de naissance est obligatoire");
+    } else {
+      // Vérifier que la date n'est pas dans le futur
+      const dateNaissance = new Date(formData.dateNaissance);
+      const aujourdhui = new Date();
+      if (dateNaissance > aujourdhui) {
+        newFieldErrors.dateNaissance = "La date de naissance ne peut pas être dans le futur";
+        errors.push("La date de naissance ne peut pas être dans le futur");
+      }
+    }
+    if (!formData.lieuNaissance || formData.lieuNaissance.trim() === "") {
+      newFieldErrors.lieuNaissance = "Le lieu de naissance est obligatoire";
+      errors.push("Le lieu de naissance est obligatoire");
+    } else if (!isValidAddress(formData.lieuNaissance)) {
+      newFieldErrors.lieuNaissance = "Le lieu de naissance doit contenir au moins 5 caractères";
+      errors.push("Le lieu de naissance doit contenir au moins 5 caractères");
     }
 
-    if (!formData.certificatNumero || !formData.certificatDateDelivrance) {
-      toast.error("Veuillez renseigner les informations du certificat d'accouchement");
-      return;
+    // Validations parents
+    if (!formData.nomPere || formData.nomPere.trim() === "") {
+      newFieldErrors.nomPere = "Le nom du père est obligatoire";
+      errors.push("Le nom du père est obligatoire");
+    } else if (!isValidName(formData.nomPere)) {
+      newFieldErrors.nomPere = "Le nom du père ne doit contenir que des lettres, espaces, tirets et apostrophes";
+      errors.push("Le nom du père ne doit contenir que des lettres, espaces, tirets et apostrophes");
+    }
+    if (formData.prenomPere && formData.prenomPere.trim() !== "" && !isValidName(formData.prenomPere)) {
+      newFieldErrors.prenomPere = "Le prénom du père ne doit contenir que des lettres, espaces, tirets et apostrophes";
+      errors.push("Le prénom du père ne doit contenir que des lettres, espaces, tirets et apostrophes");
+    }
+    if (!formData.nomMere || formData.nomMere.trim() === "") {
+      newFieldErrors.nomMere = "Le nom de la mère est obligatoire";
+      errors.push("Le nom de la mère est obligatoire");
+    } else if (!isValidName(formData.nomMere)) {
+      newFieldErrors.nomMere = "Le nom de la mère ne doit contenir que des lettres, espaces, tirets et apostrophes";
+      errors.push("Le nom de la mère ne doit contenir que des lettres, espaces, tirets et apostrophes");
+    }
+    if (formData.prenomMere && formData.prenomMere.trim() !== "" && !isValidName(formData.prenomMere)) {
+      newFieldErrors.prenomMere = "Le prénom de la mère ne doit contenir que des lettres, espaces, tirets et apostrophes";
+      errors.push("Le prénom de la mère ne doit contenir que des lettres, espaces, tirets et apostrophes");
+    }
+    if (formData.nomJeuneFilleMere && formData.nomJeuneFilleMere.trim() !== "" && !isValidName(formData.nomJeuneFilleMere)) {
+      newFieldErrors.nomJeuneFilleMere = "Le nom de jeune fille de la mère ne doit contenir que des lettres, espaces, tirets et apostrophes";
+      errors.push("Le nom de jeune fille de la mère ne doit contenir que des lettres, espaces, tirets et apostrophes");
+    }
+
+    // Validations hôpital
+    if (!selectedHopital) {
+      newFieldErrors.hopital = "L'hôpital d'accouchement est obligatoire";
+      errors.push("L'hôpital d'accouchement est obligatoire");
+    } else if (selectedHopital === "autre") {
+      if (!formData.hopitalAutreNom || formData.hopitalAutreNom.trim() === "") {
+        newFieldErrors.hopitalAutreNom = "Le nom de l'hôpital est obligatoire lorsque vous sélectionnez 'Autre'";
+        errors.push("Le nom de l'hôpital est obligatoire lorsque vous sélectionnez 'Autre'");
+      }
+      if (!formData.hopitalAutreType) {
+        newFieldErrors.hopitalAutreType = "Le type d'établissement est obligatoire";
+        errors.push("Le type d'établissement est obligatoire");
+      }
+    }
+
+    // Validations certificat
+    if (!formData.certificatNumero || formData.certificatNumero.trim() === "") {
+      newFieldErrors.certificatNumero = "Le numéro du certificat d'accouchement est obligatoire";
+      errors.push("Le numéro du certificat d'accouchement est obligatoire");
+    } else if (!isValidNumber(formData.certificatNumero)) {
+      newFieldErrors.certificatNumero = "Le numéro du certificat d'accouchement ne doit contenir que des chiffres";
+      errors.push("Le numéro du certificat d'accouchement ne doit contenir que des chiffres");
+    }
+    if (!formData.certificatDateDelivrance) {
+      newFieldErrors.certificatDateDelivrance = "La date de délivrance du certificat est obligatoire";
+      errors.push("La date de délivrance du certificat est obligatoire");
+    } else {
+      // Vérifier que la date de délivrance n'est pas dans le futur
+      const dateDelivrance = new Date(formData.certificatDateDelivrance);
+      const aujourdhui = new Date();
+      if (dateDelivrance > aujourdhui) {
+        newFieldErrors.certificatDateDelivrance = "La date de délivrance du certificat ne peut pas être dans le futur";
+        errors.push("La date de délivrance du certificat ne peut pas être dans le futur");
+      }
+      // Vérifier que la date de délivrance n'est pas antérieure à la date de naissance
+      if (formData.dateNaissance) {
+        const dateNaissance = new Date(formData.dateNaissance);
+        if (dateDelivrance < dateNaissance) {
+          newFieldErrors.certificatDateDelivrance = "La date de délivrance du certificat ne peut pas être antérieure à la date de naissance";
+          errors.push("La date de délivrance du certificat ne peut pas être antérieure à la date de naissance");
+        }
+      }
     }
 
     if (!documents.certificatAccouchement) {
-      toast.error("Veuillez téléverser le certificat d'accouchement");
+      newFieldErrors.certificatAccouchement = "Le certificat d'accouchement doit être téléversé";
+      errors.push("Le certificat d'accouchement doit être téléversé");
+    }
+
+    // Validations optionnelles avec format
+    if (formData.poids && !isValidWeight(formData.poids)) {
+      newFieldErrors.poids = "Le poids doit être un nombre positif entre 0 et 10 kg";
+      errors.push("Le poids doit être un nombre positif entre 0 et 10 kg");
+    }
+    if (formData.taille && !isValidHeight(formData.taille)) {
+      newFieldErrors.taille = "La taille doit être un nombre positif entre 0 et 100 cm";
+      errors.push("La taille doit être un nombre positif entre 0 et 100 cm");
+    }
+    if (formData.heureNaissance && !isValidTime(formData.heureNaissance)) {
+      newFieldErrors.heureNaissance = "L'heure de naissance doit être au format HH:MM (ex: 14:30)";
+      errors.push("L'heure de naissance doit être au format HH:MM (ex: 14:30)");
+    }
+
+    // Afficher les erreurs
+    setFieldErrors(newFieldErrors);
+    if (errors.length > 0) {
+      toast.error(`Veuillez corriger les erreurs suivantes : ${errors.join(", ")}`);
       return;
     }
 
     setLoading(true);
 
     try {
-      // Préparer les données de déclaration
-      const declarationData: DeclarationData = {
-        nomEnfant: formData.nomEnfant,
-        prenomEnfant: formData.prenomEnfant,
-        sexe: formData.sexe as "M" | "F",
-        dateNaissance: formData.dateNaissance,
-        heureNaissance: formData.heureNaissance || undefined,
-        lieuNaissance: formData.lieuNaissance,
-        poids: formData.poids ? parseFloat(formData.poids) : undefined,
-        taille: formData.taille ? parseFloat(formData.taille) : undefined,
-        nomPere: formData.nomPere,
-        prenomPere: formData.prenomPere || undefined,
-        professionPere: formData.professionPere || undefined,
-        nationalitePere: formData.nationalitePere || undefined,
-        nomMere: formData.nomMere,
-        prenomMere: formData.prenomMere || undefined,
-        nomJeuneFilleMere: formData.nomJeuneFilleMere || undefined,
-        professionMere: formData.professionMere || undefined,
-        nationaliteMere: formData.nationaliteMere || undefined,
-        region: selectedRegion,
-        departement: selectedDepartement,
-        commune: selectedCommune || undefined,
-        mairie: selectedMairie,
-        hopitalAccouchement: selectedHopital === "autre" ? null : selectedHopital,
-        hopitalAutre: selectedHopital === "autre" ? {
+      // Créer FormData pour envoyer les fichiers
+      const formDataToSend = new FormData();
+      
+      // Ajouter les données de déclaration
+      formDataToSend.append('nomEnfant', formData.nomEnfant);
+      formDataToSend.append('prenomEnfant', formData.prenomEnfant);
+      formDataToSend.append('sexe', formData.sexe);
+      formDataToSend.append('dateNaissance', formData.dateNaissance);
+      if (formData.heureNaissance) {
+        formDataToSend.append('heureNaissance', formData.heureNaissance);
+      }
+      formDataToSend.append('lieuNaissance', formData.lieuNaissance);
+      if (formData.poids) {
+        formDataToSend.append('poids', formData.poids);
+      }
+      if (formData.taille) {
+        formDataToSend.append('taille', formData.taille);
+      }
+      formDataToSend.append('nomPere', formData.nomPere);
+      if (formData.prenomPere) {
+        formDataToSend.append('prenomPere', formData.prenomPere);
+      }
+      if (formData.professionPere) {
+        formDataToSend.append('professionPere', formData.professionPere);
+      }
+      if (formData.nationalitePere) {
+        formDataToSend.append('nationalitePere', formData.nationalitePere);
+      }
+      formDataToSend.append('nomMere', formData.nomMere);
+      if (formData.prenomMere) {
+        formDataToSend.append('prenomMere', formData.prenomMere);
+      }
+      if (formData.nomJeuneFilleMere) {
+        formDataToSend.append('nomJeuneFilleMere', formData.nomJeuneFilleMere);
+      }
+      if (formData.professionMere) {
+        formDataToSend.append('professionMere', formData.professionMere);
+      }
+      if (formData.nationaliteMere) {
+        formDataToSend.append('nationaliteMere', formData.nationaliteMere);
+      }
+      formDataToSend.append('region', selectedRegion);
+      formDataToSend.append('departement', selectedDepartement);
+      if (selectedCommune) {
+        formDataToSend.append('commune', selectedCommune);
+      }
+      formDataToSend.append('mairie', selectedMairie);
+      formDataToSend.append('hopitalAccouchement', selectedHopital === "autre" ? "" : selectedHopital);
+      if (selectedHopital === "autre") {
+        formDataToSend.append('hopitalAutre', JSON.stringify({
           nom: formData.hopitalAutreNom,
           type: formData.hopitalAutreType,
           adresse: formData.hopitalAutreAdresse || undefined,
           telephone: formData.hopitalAutreTelephone || undefined,
           email: formData.hopitalAutreEmail || undefined,
-        } : undefined,
-        certificatAccouchement: {
-          numero: formData.certificatNumero,
-          dateDelivrance: formData.certificatDateDelivrance,
-        },
-      };
+        }));
+      }
+      formDataToSend.append('certificatAccouchement', JSON.stringify({
+        numero: formData.certificatNumero,
+        dateDelivrance: formData.certificatDateDelivrance,
+      }));
 
-      await declarationService.createDeclaration(declarationData);
+      // Ajouter les fichiers
+      if (documents.certificatAccouchement) {
+        formDataToSend.append('certificatAccouchement', documents.certificatAccouchement);
+      }
+      if (documents.idPere) {
+        formDataToSend.append('idPere', documents.idPere);
+      }
+      if (documents.idMere) {
+        formDataToSend.append('idMere', documents.idMere);
+      }
+      if (documents.autres) {
+        formDataToSend.append('autres', documents.autres);
+      }
+
+      await declarationService.createDeclarationWithFiles(formDataToSend);
       
       toast.success("Déclaration soumise avec succès !");
       window.location.href = "/dashboard";
     } catch (error: any) {
-      console.error("Erreur lors de la soumission:", error);
-      toast.error(error.response?.data?.message || "Erreur lors de la soumission");
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || "Erreur lors de la soumission de la déclaration";
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -441,8 +665,15 @@ export default function NewDeclaration() {
                     name="prenomEnfant"
                     value={formData.prenomEnfant}
                     onChange={handleChange}
-                    required
+                    onBlur={(e) => {
+                      if (!e.target.value.trim()) {
+                        setFieldErrors({ ...fieldErrors, prenomEnfant: 'Le prénom de l\'enfant est obligatoire' });
+                      }
+                    }}
                   />
+                  {fieldErrors.prenomEnfant && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.prenomEnfant}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="nomEnfant">Nom *</Label>
@@ -451,8 +682,15 @@ export default function NewDeclaration() {
                     name="nomEnfant"
                     value={formData.nomEnfant}
                     onChange={handleChange}
-                    required
+                    onBlur={(e) => {
+                      if (!e.target.value.trim()) {
+                        setFieldErrors({ ...fieldErrors, nomEnfant: 'Le nom de l\'enfant est obligatoire' });
+                      }
+                    }}
                   />
+                  {fieldErrors.nomEnfant && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.nomEnfant}</p>
+                  )}
                 </div>
               </div>
 
@@ -480,8 +718,10 @@ export default function NewDeclaration() {
                     type="date"
                     value={formData.dateNaissance}
                     onChange={handleChange}
-                    required
                   />
+                  {fieldErrors.dateNaissance && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.dateNaissance}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="heureNaissance">Heure de naissance</Label>
@@ -504,8 +744,10 @@ export default function NewDeclaration() {
                     value={formData.lieuNaissance}
                     onChange={handleChange}
                     placeholder="Ex: Hôpital Principal de Dakar"
-                    required
                   />
+                  {fieldErrors.lieuNaissance && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.lieuNaissance}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="poids">Poids (kg)</Label>
@@ -562,8 +804,10 @@ export default function NewDeclaration() {
                       name="nomPere"
                       value={formData.nomPere}
                       onChange={handleChange}
-                      required
                     />
+                    {fieldErrors.nomPere && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.nomPere}</p>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -608,8 +852,10 @@ export default function NewDeclaration() {
                       name="nomMere"
                       value={formData.nomMere}
                       onChange={handleChange}
-                      required
                     />
+                    {fieldErrors.nomMere && (
+                      <p className="text-sm text-red-600 mt-1">{fieldErrors.nomMere}</p>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -686,8 +932,10 @@ export default function NewDeclaration() {
                         name="hopitalAutreNom"
                         value={formData.hopitalAutreNom}
                         onChange={handleChange}
-                        required={showHopitalAutre}
                       />
+                      {fieldErrors.hopitalAutreNom && (
+                        <p className="text-sm text-red-600 mt-1">{fieldErrors.hopitalAutreNom}</p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="hopitalAutreType">Type *</Label>
@@ -760,8 +1008,10 @@ export default function NewDeclaration() {
                     name="certificatNumero"
                     value={formData.certificatNumero}
                     onChange={handleChange}
-                    required
                   />
+                  {fieldErrors.certificatNumero && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.certificatNumero}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="certificatDateDelivrance">Date de délivrance *</Label>
@@ -771,8 +1021,10 @@ export default function NewDeclaration() {
                     type="date"
                     value={formData.certificatDateDelivrance}
                     onChange={handleChange}
-                    required
                   />
+                  {fieldErrors.certificatDateDelivrance && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.certificatDateDelivrance}</p>
+                  )}
                 </div>
               </div>
 
@@ -788,10 +1040,17 @@ export default function NewDeclaration() {
                     id="certificatAccouchement"
                     type="file"
                     accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={(e) => handleFileChange(e, "certificatAccouchement")}
+                    onChange={(e) => {
+                      handleFileChange(e, "certificatAccouchement");
+                      if (fieldErrors.certificatAccouchement) {
+                        setFieldErrors({ ...fieldErrors, certificatAccouchement: "" });
+                      }
+                    }}
                     className="flex-1"
-                    required
                   />
+                  {fieldErrors.certificatAccouchement && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.certificatAccouchement}</p>
+                  )}
                   <Upload className="h-5 w-5 text-gray-400" />
                 </div>
               </div>

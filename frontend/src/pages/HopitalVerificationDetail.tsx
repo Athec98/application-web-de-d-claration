@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useLocation, useRoute } from "wouter";
+import { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,67 +19,65 @@ import {
   XCircle,
   Download,
   Image as ImageIcon,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from "lucide-react";
 import { toast } from "sonner";
-
-// Données simulées
-const mockVerificationRequest = {
-  id: 1,
-  // Informations enfant
-  childFirstName: "Mamadou",
-  childLastName: "Sall",
-  childGender: "masculin",
-  birthDate: "2024-10-20T14:30:00",
-  birthPlace: "Hôpital Principal de Dakar",
-  
-  // Informations parents
-  fatherFirstName: "Ousmane",
-  fatherLastName: "Sall",
-  fatherIdNumber: "1234567890123",
-  motherFirstName: "Awa",
-  motherLastName: "Diop",
-  motherIdNumber: "9876543210987",
-  residenceAddress: "Parcelles Assainies, Dakar",
-  
-  // Métadonnées
-  parentName: "Awa Sall",
-  parentPhone: "+221 77 123 45 67",
-  parentEmail: "awa.sall@example.com",
-  submittedDate: "2024-10-26T10:00:00",
-  requestDate: "2024-10-27T09:00:00",
-  mairieRequester: "Mairie de Dakar",
-  
-  // Documents
-  documents: [
-    { id: 1, type: "certificat_accouchement", name: "certificat_accouchement.pdf", url: "#" },
-    { id: 2, type: "id_pere", name: "cni_pere.jpg", url: "#" },
-    { id: 3, type: "id_mere", name: "cni_mere.jpg", url: "#" },
-  ],
-};
+import { declarationService, type Declaration } from "@/services/declarationService";
+import { getFileUrl } from "@/utils/fileUtils";
 
 export default function HopitalVerificationDetail() {
-  const [, setLocation] = useLocation();
-  const [, params] = useRoute("/hopital/verification/:id");
+  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const declarationId = id;
   
+  const [declaration, setDeclaration] = useState<Declaration | null>(null);
+  const [loading, setLoading] = useState(true);
   const [validateDialogOpen, setValidateDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [validationComment, setValidationComment] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loadingAction, setLoadingAction] = useState(false);
+
+  useEffect(() => {
+    const loadDeclaration = async () => {
+      if (!declarationId) {
+        console.error('ID de déclaration manquant dans l\'URL');
+        toast.error("ID de déclaration manquant dans l'URL");
+        setLoading(false);
+        return;
+      }
+      
+      try {
+        setLoading(true);
+        console.log('Chargement de la déclaration avec ID:', declarationId);
+        const data = await declarationService.getDeclarationById(declarationId);
+        setDeclaration(data);
+      } catch (error: any) {
+        console.error("Erreur lors du chargement:", error);
+        toast.error("Erreur lors du chargement de la déclaration");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDeclaration();
+  }, [declarationId]);
 
   const handleValidate = async () => {
-    setLoading(true);
+    if (!declarationId) return;
+
+    setLoadingAction(true);
     try {
-      // TODO: Implémenter l'API
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await declarationService.verifyCertificate(declarationId, true, validationComment);
       toast.success("Certificat validé. La mairie a été notifiée.");
       setValidateDialogOpen(false);
-      window.location.href = "/hopital/dashboard";
-    } catch (error) {
-      toast.error("Erreur lors de la validation");
+      navigate("/hopital/dashboard");
+    } catch (error: any) {
+      console.error("Erreur lors de la validation:", error);
+      toast.error(error.response?.data?.message || "Erreur lors de la validation");
     } finally {
-      setLoading(false);
+      setLoadingAction(false);
     }
   };
 
@@ -89,17 +87,19 @@ export default function HopitalVerificationDetail() {
       return;
     }
 
-    setLoading(true);
+    if (!declarationId) return;
+
+    setLoadingAction(true);
     try {
-      // TODO: Implémenter l'API
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await declarationService.verifyCertificate(declarationId, false, rejectionReason);
       toast.success("Certificat rejeté. La mairie et le parent ont été notifiés.");
       setRejectDialogOpen(false);
-      window.location.href = "/hopital/dashboard";
-    } catch (error) {
-      toast.error("Erreur lors du rejet");
+      navigate("/hopital/dashboard");
+    } catch (error: any) {
+      console.error("Erreur lors du rejet:", error);
+      toast.error(error.response?.data?.message || "Erreur lors du rejet");
     } finally {
-      setLoading(false);
+      setLoadingAction(false);
     }
   };
 
@@ -113,6 +113,30 @@ export default function HopitalVerificationDetail() {
     return labels[type] || type;
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-senegal-green mx-auto mb-4" />
+          <p className="text-gray-600">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!declaration) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">Déclaration non trouvée</p>
+          <Button onClick={() => { navigate("/hopital/dashboard"); }}>
+            Retour au tableau de bord
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -123,7 +147,7 @@ export default function HopitalVerificationDetail() {
               variant="ghost" 
               size="icon"
               onClick={() => {
-                window.location.href = "/hopital/dashboard";
+                navigate("/hopital/dashboard");
               }}
             >
               <ArrowLeft className="h-5 w-5" />
@@ -133,7 +157,7 @@ export default function HopitalVerificationDetail() {
                 Vérification du Certificat d'Accouchement
               </h1>
               <p className="text-sm text-gray-600">
-                Demande de vérification #{mockVerificationRequest.id}
+                Demande de vérification #{declaration._id?.slice(-8)}
               </p>
             </div>
           </div>
@@ -150,11 +174,19 @@ export default function HopitalVerificationDetail() {
               <div className="flex-1">
                 <CardTitle className="text-yellow-900">Vérification requise</CardTitle>
                 <CardDescription className="text-yellow-700">
-                  La {mockVerificationRequest.mairieRequester} demande la vérification de l'authenticité 
+                  La mairie demande la vérification de l'authenticité 
                   du certificat d'accouchement pour cette naissance.
                 </CardDescription>
                 <p className="text-sm text-yellow-600 mt-2">
-                  Demande reçue le {new Date(mockVerificationRequest.requestDate).toLocaleDateString('fr-FR')}
+                  Demande reçue le {(() => {
+                    try {
+                      if (!declaration.createdAt) return 'N/A';
+                      const date = new Date(declaration.createdAt);
+                      return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('fr-FR');
+                    } catch {
+                      return 'N/A';
+                    }
+                  })()}
                 </p>
               </div>
             </div>
@@ -165,6 +197,7 @@ export default function HopitalVerificationDetail() {
                 className="text-white"
                 style={{ backgroundColor: "#00853F" }}
                 onClick={() => setValidateDialogOpen(true)}
+                disabled={loadingAction}
               >
                 <CheckCircle className="h-4 w-4 mr-2" />
                 Valider l'authenticité
@@ -172,6 +205,7 @@ export default function HopitalVerificationDetail() {
               <Button
                 variant="destructive"
                 onClick={() => setRejectDialogOpen(true)}
+                disabled={loadingAction}
               >
                 <XCircle className="h-4 w-4 mr-2" />
                 Certificat non conforme
@@ -188,25 +222,34 @@ export default function HopitalVerificationDetail() {
           <CardContent className="grid grid-cols-2 gap-4">
             <div>
               <Label className="text-gray-600">Prénom(s)</Label>
-              <p className="font-medium">{mockVerificationRequest.childFirstName}</p>
+              <p className="font-medium">{declaration.prenomEnfant}</p>
             </div>
             <div>
               <Label className="text-gray-600">Nom</Label>
-              <p className="font-medium">{mockVerificationRequest.childLastName}</p>
+              <p className="font-medium">{declaration.nomEnfant}</p>
             </div>
             <div>
               <Label className="text-gray-600">Sexe</Label>
-              <p className="font-medium capitalize">{mockVerificationRequest.childGender}</p>
+              <p className="font-medium">{declaration.sexe === 'M' ? 'Masculin' : 'Féminin'}</p>
             </div>
             <div>
               <Label className="text-gray-600">Date et heure de naissance</Label>
               <p className="font-medium">
-                {new Date(mockVerificationRequest.birthDate).toLocaleString('fr-FR')}
+                {(() => {
+                  try {
+                    if (!declaration.dateNaissance) return 'N/A';
+                    const date = new Date(declaration.dateNaissance);
+                    return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('fr-FR');
+                  } catch {
+                    return 'N/A';
+                  }
+                })()}
+                {declaration.heureNaissance && ` à ${declaration.heureNaissance}`}
               </p>
             </div>
             <div className="col-span-2">
               <Label className="text-gray-600">Lieu de naissance déclaré</Label>
-              <p className="font-medium">{mockVerificationRequest.birthPlace}</p>
+              <p className="font-medium">{declaration.lieuNaissance}</p>
               <Badge className="mt-2 bg-blue-600">
                 Vérifiez que cette naissance a bien eu lieu dans votre établissement
               </Badge>
@@ -229,15 +272,11 @@ export default function HopitalVerificationDetail() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-gray-600">Prénom(s)</Label>
-                  <p className="font-medium">{mockVerificationRequest.fatherFirstName}</p>
+                  <p className="font-medium">{declaration.prenomPere || 'N/A'}</p>
                 </div>
                 <div>
                   <Label className="text-gray-600">Nom</Label>
-                  <p className="font-medium">{mockVerificationRequest.fatherLastName}</p>
-                </div>
-                <div className="col-span-2">
-                  <Label className="text-gray-600">Numéro d'identité</Label>
-                  <p className="font-medium">{mockVerificationRequest.fatherIdNumber}</p>
+                  <p className="font-medium">{declaration.nomPere}</p>
                 </div>
               </div>
             </div>
@@ -248,15 +287,11 @@ export default function HopitalVerificationDetail() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-gray-600">Prénom(s)</Label>
-                  <p className="font-medium">{mockVerificationRequest.motherFirstName}</p>
+                  <p className="font-medium">{declaration.prenomMere || 'N/A'}</p>
                 </div>
                 <div>
                   <Label className="text-gray-600">Nom</Label>
-                  <p className="font-medium">{mockVerificationRequest.motherLastName}</p>
-                </div>
-                <div className="col-span-2">
-                  <Label className="text-gray-600">Numéro d'identité</Label>
-                  <p className="font-medium">{mockVerificationRequest.motherIdNumber}</p>
+                  <p className="font-medium">{declaration.nomMere}</p>
                 </div>
               </div>
             </div>
@@ -272,35 +307,102 @@ export default function HopitalVerificationDetail() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {mockVerificationRequest.documents.map((doc) => (
-                <div 
-                  key={doc.id}
-                  className={`flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 ${
-                    doc.type === 'certificat_accouchement' ? 'border-yellow-300 bg-yellow-50' : ''
-                  }`}
-                >
-                  <div className="flex items-center space-x-3">
-                    <ImageIcon className="h-5 w-5 text-gray-400" />
-                    <div>
-                      <p className="font-medium">{getDocumentTypeLabel(doc.type)}</p>
-                      <p className="text-sm text-gray-500">{doc.name}</p>
-                      {doc.type === 'certificat_accouchement' && (
-                        <Badge className="mt-1 bg-yellow-600">Document principal à vérifier</Badge>
-                      )}
+            {(() => {
+              try {
+                // Vérifier si les documents existent et sont un tableau
+                const docs = declaration.documents;
+                if (!docs || !Array.isArray(docs) || docs.length === 0) {
+                  return (
+                    <div className="text-center py-8 text-gray-500">
+                      <p>Aucun document disponible</p>
                     </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {docs.map((doc: any, index: number) => {
+                      try {
+                        // Construire l'URL du document - peut être un chemin relatif ou une URL complète
+                        const docUrl = doc?.url || doc?.path || doc?.fichier?.url || doc?.fichier?.path;
+                        const docName = doc?.nom || doc?.name || doc?.filename || `Document ${index + 1}`;
+                        const docType = doc?.typeDocument || doc?.type || 'Document';
+                        
+                        // Construire l'URL complète du fichier
+                        const fullUrl = getFileUrl(docUrl);
+                        
+                        return (
+                          <div 
+                            key={index}
+                            className={`border rounded-lg p-4 ${
+                              doc.typeDocument === 'certificat_accouchement' ? 'border-yellow-300 bg-yellow-50' : ''
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center space-x-2">
+                                <ImageIcon className="h-5 w-5 text-gray-400" />
+                                <div>
+                                  <p className="font-medium text-sm">{docName}</p>
+                                  <p className="text-xs text-gray-500">{getDocumentTypeLabel(docType || 'autre')}</p>
+                                  {doc.typeDocument === 'certificat_accouchement' && (
+                                    <Badge className="mt-1 bg-yellow-600 text-xs">Document principal à vérifier</Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            {fullUrl && (fullUrl.match(/\.(jpg|jpeg|png|gif)$/i) || docType?.match(/image|photo/i)) && (
+                              <div className="mt-2">
+                                <img 
+                                  src={fullUrl} 
+                                  alt={docName}
+                                  className="w-full h-48 object-cover rounded border cursor-pointer hover:opacity-80"
+                                  onClick={() => window.open(fullUrl, '_blank')}
+                                  onError={(e) => {
+                                    // En cas d'erreur de chargement, masquer l'image
+                                    const target = e.target as HTMLImageElement;
+                                    target.style.display = 'none';
+                                    // Afficher un message d'erreur dans la console uniquement en développement
+                                    if (process.env.NODE_ENV === 'development') {
+                                      console.warn(`Impossible de charger l'image: ${fullUrl}`);
+                                    }
+                                  }}
+                                />
+                              </div>
+                            )}
+                            {fullUrl && (
+                              <div className="mt-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full"
+                                  onClick={() => window.open(fullUrl, '_blank')}
+                                >
+                                  <Download className="h-4 w-4 mr-2" />
+                                  Consulter
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      } catch (docError) {
+                        // En cas d'erreur lors du traitement d'un document, afficher un message
+                        return (
+                          <div key={index} className="border rounded-lg p-4 border-red-200 bg-red-50">
+                            <p className="text-sm text-red-600">Erreur lors du chargement du document</p>
+                          </div>
+                        );
+                      }
+                    })}
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.open(doc.url, '_blank')}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Consulter
-                  </Button>
-                </div>
-              ))}
-            </div>
+                );
+              } catch (error) {
+                return (
+                  <div className="text-center py-8 text-red-500">
+                    <p>Erreur lors du chargement des documents</p>
+                  </div>
+                );
+              }
+            })()}
           </CardContent>
         </Card>
 
@@ -376,9 +478,9 @@ export default function HopitalVerificationDetail() {
               className="text-white"
               style={{ backgroundColor: "#00853F" }}
               onClick={handleValidate}
-              disabled={loading}
+              disabled={loadingAction}
             >
-              {loading ? "Validation..." : "Confirmer l'authenticité"}
+              {loadingAction ? "Validation..." : "Confirmer l'authenticité"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -415,9 +517,9 @@ export default function HopitalVerificationDetail() {
             <Button 
               variant="destructive"
               onClick={handleReject}
-              disabled={loading}
+              disabled={loadingAction}
             >
-              {loading ? "Rejet..." : "Confirmer le rejet"}
+              {loadingAction ? "Rejet..." : "Confirmer le rejet"}
             </Button>
           </DialogFooter>
         </DialogContent>

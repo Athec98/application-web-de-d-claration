@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation, useRoute } from "wouter";
+import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,11 +29,12 @@ import { toast } from "sonner";
 import { declarationService, type Declaration } from "@/services/declarationService";
 import { geographicService, type Hopital } from "@/services/geographicService";
 import { acteNaissanceService } from "@/services/acteNaissanceService";
+import { getFileUrl } from "@/utils/fileUtils";
 
 export default function MairieDeclarationDetail() {
-  const [, setLocation] = useLocation();
-  const [, params] = useRoute("/mairie/declaration/:id");
-  const declarationId = params?.id;
+  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const declarationId = id;
   
   const [declaration, setDeclaration] = useState<Declaration | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,6 +43,8 @@ export default function MairieDeclarationDetail() {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [sendToHospitalDialogOpen, setSendToHospitalDialogOpen] = useState(false);
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [validateConfirmDialogOpen, setValidateConfirmDialogOpen] = useState(false);
+  const [archiveConfirmDialogOpen, setArchiveConfirmDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   
   // Hôpitaux suggérés
@@ -57,11 +60,32 @@ export default function MairieDeclarationDetail() {
     cachetFile: null as File | null,
   });
 
+  const loadDeclaration = async () => {
+    if (!declarationId) {
+      toast.error("ID de déclaration manquant dans l'URL");
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      const data = await declarationService.getDeclarationById(declarationId);
+      // Log pour déboguer les documents
+      if (data && data.documents) {
+        // Les documents sont déjà dans la déclaration
+      }
+      setDeclaration(data);
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || "Erreur lors du chargement de la déclaration";
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Charger la déclaration
   useEffect(() => {
-    if (declarationId) {
-      loadDeclaration();
-    }
+    loadDeclaration();
   }, [declarationId]);
 
   // Charger les hôpitaux suggérés quand la déclaration est chargée
@@ -70,21 +94,6 @@ export default function MairieDeclarationDetail() {
       loadSuggestedHospitals();
     }
   }, [declaration, sendToHospitalDialogOpen]);
-
-  const loadDeclaration = async () => {
-    if (!declarationId) return;
-    
-    try {
-      setLoading(true);
-      const data = await declarationService.getDeclarationById(declarationId);
-      setDeclaration(data);
-    } catch (error: any) {
-      console.error("Erreur lors du chargement:", error);
-      toast.error("Erreur lors du chargement de la déclaration");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const loadSuggestedHospitals = async () => {
     if (!declarationId) return;
@@ -99,8 +108,8 @@ export default function MairieDeclarationDetail() {
         setSelectedHospital(declaration.hopitalAccouchement.toString());
       }
     } catch (error: any) {
-      console.error("Erreur lors du chargement des hôpitaux:", error);
-      toast.error("Erreur lors du chargement des hôpitaux");
+      const errorMessage = error.response?.data?.message || "Erreur lors du chargement des hôpitaux";
+      toast.error(errorMessage);
     } finally {
       setLoadingHospitals(false);
     }
@@ -121,8 +130,28 @@ export default function MairieDeclarationDetail() {
       setSendToHospitalDialogOpen(false);
       await loadDeclaration(); // Recharger pour mettre à jour le statut
     } catch (error: any) {
-      console.error("Erreur lors de l'envoi:", error);
-      toast.error(error.response?.data?.message || "Erreur lors de l'envoi");
+      const errorMessage = error.response?.data?.message || "Erreur lors de l'envoi à l'hôpital";
+      toast.error(errorMessage);
+    } finally {
+      setLoadingAction(false);
+    }
+  };
+
+  const handleValidate = () => {
+    if (!declarationId) return;
+    setValidateConfirmDialogOpen(true);
+  };
+
+  const confirmValidate = async () => {
+    if (!declarationId) return;
+    setValidateConfirmDialogOpen(false);
+    setLoadingAction(true);
+    try {
+      await declarationService.validateDeclaration(declarationId);
+      toast.success("Déclaration validée avec succès. Le parent a été notifié.");
+      await loadDeclaration(); // Recharger pour mettre à jour le statut
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Erreur lors de la validation");
     } finally {
       setLoadingAction(false);
     }
@@ -141,6 +170,7 @@ export default function MairieDeclarationDetail() {
       await declarationService.rejectDeclaration(declarationId, rejectionReason);
       toast.success("Demande rejetée. Le parent a été notifié.");
       setRejectDialogOpen(false);
+      setRejectionReason("");
       await loadDeclaration(); // Recharger pour mettre à jour le statut
     } catch (error: any) {
       console.error("Erreur lors du rejet:", error);
@@ -151,43 +181,47 @@ export default function MairieDeclarationDetail() {
   };
 
   const handleGenerateCertificate = async () => {
-    if (!certificateData.timbreFile || !certificateData.cachetFile) {
-      toast.error("Veuillez ajouter le timbre et le cachet numériques");
-      return;
-    }
-
     if (!declarationId) return;
 
     setLoadingAction(true);
     try {
-      // Convertir les fichiers en URLs (base64 ou upload)
-      // Pour l'instant, on va utiliser des URLs temporaires
-      // TODO: Implémenter l'upload des fichiers
-      const timbreUrl = URL.createObjectURL(certificateData.timbreFile);
-      const cachetUrl = URL.createObjectURL(certificateData.cachetFile);
-
-      // Récupérer l'ID de l'utilisateur connecté depuis localStorage
-      const userStr = localStorage.getItem('user');
-      const user = userStr ? JSON.parse(userStr) : null;
-      const officierEtatCivilId = user?._id || user?.id;
-
-      if (!officierEtatCivilId) {
-        toast.error("Erreur: Utilisateur non connecté");
-        return;
-      }
-
+      // Le backend génère automatiquement le timbre et le cachet numérique
+      // Toutes les informations de la déclaration sont incluses dans l'acte :
+      // - Informations de l'enfant (nom, prénom, date, heure, lieu, sexe)
+      // - Informations du père (nom, prénom, profession, nationalité)
+      // - Informations de la mère (nom, prénom, nom de jeune fille, profession, nationalité)
+      // - Timbre et cachet numérique générés automatiquement
+      // - Numéro d'acte et numéro de registre
+      
       await acteNaissanceService.generateActeNaissance(declarationId);
       
-      toast.success("Acte de naissance généré avec succès !");
+      toast.success("Acte de naissance généré avec succès avec toutes les informations !");
       setGenerateDialogOpen(false);
+      setCertificateData({ timbreNumeriqueUrl: "", cachetNumeriqueUrl: "", timbreFile: null, cachetFile: null }); // Réinitialiser
       await loadDeclaration(); // Recharger pour mettre à jour le statut
-      
-      // Nettoyer les URLs temporaires
-      URL.revokeObjectURL(timbreUrl);
-      URL.revokeObjectURL(cachetUrl);
     } catch (error: any) {
-      console.error("Erreur lors de la génération:", error);
-      toast.error(error.response?.data?.message || "Erreur lors de la génération");
+      const errorMessage = error.response?.data?.message || "Erreur lors de la génération de l'acte de naissance";
+      toast.error(errorMessage);
+    } finally {
+      setLoadingAction(false);
+    }
+  };
+
+  const handleArchive = () => {
+    if (!declarationId) return;
+    setArchiveConfirmDialogOpen(true);
+  };
+
+  const confirmArchive = async () => {
+    if (!declarationId) return;
+    setArchiveConfirmDialogOpen(false);
+    setLoadingAction(true);
+    try {
+      await declarationService.archiveDeclaration(declarationId);
+      toast.success("Dossier archivé avec succès !");
+      await loadDeclaration(); // Recharger pour mettre à jour le statut
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Erreur lors de l'archivage");
     } finally {
       setLoadingAction(false);
     }
@@ -231,8 +265,12 @@ export default function MairieDeclarationDetail() {
   }
 
   const canSendToHospital = declaration.statut === 'en_cours_mairie';
-  const canGenerateActe = declaration.statut === 'certificat_valide';
-  const hasHospitalResponse = declaration.statut === 'certificat_valide' || declaration.statut === 'certificat_rejete';
+  // Le bouton "Générer l'acte" doit apparaître quand :
+  // - Le statut est "certificat_valide" (après validation du certificat par l'hôpital) OU "validee" (après validation par la mairie)
+  // - ET l'acte n'a pas encore été généré
+  const canGenerateActe = (declaration.statut === 'certificat_valide' || declaration.statut === 'validee') && !declaration.acteNaissance;
+  const canArchive = declaration.statut === 'validee' && declaration.acteNaissance;
+  const hasHospitalResponse = declaration.statut === 'certificat_valide' || declaration.statut === 'certificat_rejete' || declaration.statut === 'validee';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -270,7 +308,26 @@ export default function MairieDeclarationDetail() {
               <div>
                 <CardTitle>Statut de la demande</CardTitle>
                 <CardDescription>
-                  Soumise le {new Date(declaration.createdAt).toLocaleDateString('fr-FR')}
+                  Soumise le {(() => {
+                    try {
+                      if (!declaration.createdAt) return 'N/A';
+                      const date = new Date(declaration.createdAt);
+                      return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('fr-FR');
+                    } catch {
+                      return 'N/A';
+                    }
+                  })()}
+                  {declaration.dateEnvoiMairie && (
+                    <> • Envoyée à la mairie le {(() => {
+                      try {
+                        if (!declaration.dateEnvoiMairie) return 'N/A';
+                        const date = new Date(declaration.dateEnvoiMairie);
+                        return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('fr-FR');
+                      } catch {
+                        return 'N/A';
+                      }
+                    })()}</>
+                  )}
                 </CardDescription>
               </div>
               {getStatusBadge(declaration.statut)}
@@ -329,12 +386,45 @@ export default function MairieDeclarationDetail() {
                   )}
                   {(declaration.certificatAccouchement as any).dateVerification && (
                     <p className="text-xs text-gray-500 mt-2">
-                      Vérifié le {new Date((declaration.certificatAccouchement as any).dateVerification).toLocaleDateString('fr-FR')}
+                      Vérifié le {(() => {
+                        try {
+                          const dateVerif = (declaration.certificatAccouchement as any)?.dateVerification;
+                          if (!dateVerif) return 'N/A';
+                          const date = new Date(dateVerif);
+                          return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('fr-FR');
+                        } catch {
+                          return 'N/A';
+                        }
+                      })()}
                     </p>
                   )}
                 </div>
 
-                {canGenerateActe && (
+                {/* Actions après validation du certificat par l'hôpital */}
+                {declaration.statut === 'certificat_valide' && (
+                  <div className="flex space-x-4">
+                    <Button
+                      className="text-white"
+                      style={{ backgroundColor: "#00853F" }}
+                      onClick={handleValidate}
+                      disabled={loadingAction}
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Valider la déclaration
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => setRejectDialogOpen(true)}
+                      disabled={loadingAction}
+                    >
+                      <XCircle className="h-4 w-4 mr-2" />
+                      Rejeter la déclaration
+                    </Button>
+                  </div>
+                )}
+
+                {/* Afficher le bouton "Générer l'acte" quand le certificat est validé ou la déclaration est validée, et qu'il n'y a pas encore d'acte */}
+                {(declaration.statut === 'certificat_valide' || declaration.statut === 'validee') && !declaration.acteNaissance && (
                   <Button
                     className="text-white"
                     style={{ backgroundColor: "#00853F" }}
@@ -345,6 +435,104 @@ export default function MairieDeclarationDetail() {
                     Générer l'acte de naissance
                   </Button>
                 )}
+                {canArchive && (
+                  <Button
+                    variant="outline"
+                    onClick={handleArchive}
+                    disabled={loadingAction}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Archiver le dossier
+                  </Button>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Informations de la déclaration */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Informations de la Déclaration</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-gray-600">Date de soumission</Label>
+              <p className="font-medium">
+                {(() => {
+                  try {
+                    if (!declaration.createdAt) return 'N/A';
+                    const date = new Date(declaration.createdAt);
+                    if (isNaN(date.getTime())) return 'N/A';
+                    return date.toLocaleDateString('fr-FR', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    });
+                  } catch {
+                    return 'N/A';
+                  }
+                })()}
+              </p>
+            </div>
+            {declaration.dateEnvoiMairie && (
+              <div>
+                <Label className="text-gray-600">Date d'envoi à la mairie</Label>
+                <p className="font-medium">
+                  {(() => {
+                    try {
+                      if (!declaration.dateEnvoiMairie) return 'N/A';
+                      const date = new Date(declaration.dateEnvoiMairie);
+                      if (isNaN(date.getTime())) return 'N/A';
+                      return date.toLocaleDateString('fr-FR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      });
+                    } catch {
+                      return 'N/A';
+                    }
+                  })()}
+                </p>
+              </div>
+            )}
+            {declaration.dateEnvoiHopital && (
+              <div>
+                <Label className="text-gray-600">Date d'envoi à l'hôpital</Label>
+                <p className="font-medium">
+                  {(() => {
+                    try {
+                      if (!declaration.dateEnvoiHopital) return 'N/A';
+                      const date = new Date(declaration.dateEnvoiHopital);
+                      if (isNaN(date.getTime())) return 'N/A';
+                      return date.toLocaleDateString('fr-FR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      });
+                    } catch {
+                      return 'N/A';
+                    }
+                  })()}
+                </p>
+              </div>
+            )}
+            <div>
+              <Label className="text-gray-600">Statut</Label>
+              <div className="mt-1">{getStatusBadge(declaration.statut)}</div>
+            </div>
+            {declaration.user && typeof declaration.user === 'object' && (
+              <div>
+                <Label className="text-gray-600">Déclarant</Label>
+                <p className="font-medium">
+                  {declaration.user.firstName} {declaration.user.lastName}
+                </p>
               </div>
             )}
           </CardContent>
@@ -371,7 +559,15 @@ export default function MairieDeclarationDetail() {
             <div>
               <Label className="text-gray-600">Date de naissance</Label>
               <p className="font-medium">
-                {new Date(declaration.dateNaissance).toLocaleDateString('fr-FR')}
+                {(() => {
+                  try {
+                    if (!declaration.dateNaissance) return 'N/A';
+                    const date = new Date(declaration.dateNaissance);
+                    return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('fr-FR');
+                  } catch {
+                    return 'N/A';
+                  }
+                })()}
                 {declaration.heureNaissance && ` à ${declaration.heureNaissance}`}
               </p>
             </div>
@@ -450,6 +646,110 @@ export default function MairieDeclarationDetail() {
           </CardContent>
         </Card>
 
+        {/* Documents joints par le parent */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <ImageIcon className="h-5 w-5" />
+              <span>Documents joints par le parent</span>
+            </CardTitle>
+            <CardDescription>
+              Photos et documents envoyés avec la déclaration
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              try {
+                // Vérifier si les documents existent et sont un tableau
+                const docs = declaration.documents;
+                if (!docs || !Array.isArray(docs) || docs.length === 0) {
+                  return (
+                    <div className="text-center py-8 text-gray-500">
+                      <p>Aucun document joint à cette déclaration</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {docs.map((doc: any, index: number) => {
+                      try {
+                        // Construire l'URL du document - peut être un chemin relatif ou une URL complète
+                        const docUrl = doc?.url || doc?.path || doc?.fichier?.url || doc?.fichier?.path;
+                        const docName = doc?.nom || doc?.name || doc?.filename || `Document ${index + 1}`;
+                        const docType = doc?.typeDocument || doc?.type || 'Document';
+                        
+                        // Construire l'URL complète du fichier
+                        const fullUrl = getFileUrl(docUrl);
+                        
+                        return (
+                          <div key={index} className="border rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-medium text-sm">{docName}</span>
+                              {fullUrl && (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  asChild
+                                >
+                                  <a 
+                                    href={fullUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="flex items-center space-x-1"
+                                  >
+                                    <FileText className="h-4 w-4" />
+                                    <span>Voir</span>
+                                  </a>
+                                </Button>
+                              )}
+                            </div>
+                            {fullUrl && (fullUrl.match(/\.(jpg|jpeg|png|gif)$/i) || docType?.match(/image|photo/i)) && (
+                              <div className="mt-2">
+                                <img 
+                                  src={fullUrl} 
+                                  alt={docName}
+                                  className="w-full h-48 object-cover rounded border cursor-pointer hover:opacity-80"
+                                  onClick={() => window.open(fullUrl, '_blank')}
+                                  onError={(e) => {
+                                    // En cas d'erreur de chargement, masquer l'image
+                                    const target = e.target as HTMLImageElement;
+                                    target.style.display = 'none';
+                                    // Afficher un message d'erreur dans la console uniquement en développement
+                                    if (process.env.NODE_ENV === 'development') {
+                                      console.warn(`Impossible de charger l'image: ${fullUrl}`);
+                                    }
+                                  }}
+                                />
+                              </div>
+                            )}
+                            <p className="text-xs text-gray-500 mt-2">
+                              Type: {docType}
+                            </p>
+                          </div>
+                        );
+                      } catch (docError) {
+                        // En cas d'erreur lors du traitement d'un document, afficher un message
+                        return (
+                          <div key={index} className="border rounded-lg p-4 border-red-200 bg-red-50">
+                            <p className="text-sm text-red-600">Erreur lors du chargement du document</p>
+                          </div>
+                        );
+                      }
+                    })}
+                  </div>
+                );
+              } catch (error) {
+                return (
+                  <div className="text-center py-8 text-red-500">
+                    <p>Erreur lors du chargement des documents</p>
+                  </div>
+                );
+              }
+            })()}
+          </CardContent>
+        </Card>
+
         {/* Informations du certificat d'accouchement */}
         {declaration.certificatAccouchement && (
           <Card className="mb-6">
@@ -464,9 +764,35 @@ export default function MairieDeclarationDetail() {
               <div>
                 <Label className="text-gray-600">Date de délivrance</Label>
                 <p className="font-medium">
-                  {new Date(declaration.certificatAccouchement.dateDelivrance).toLocaleDateString('fr-FR')}
+                  {(() => {
+                    try {
+                      const dateDeliv = (declaration.certificatAccouchement as any)?.dateDelivrance;
+                      if (!dateDeliv) return 'N/A';
+                      const date = new Date(dateDeliv);
+                      return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('fr-FR');
+                    } catch {
+                      return 'N/A';
+                    }
+                  })()}
                 </p>
               </div>
+              {(declaration.certificatAccouchement as any).fichier && (declaration.certificatAccouchement as any).fichier.url && (
+                <div className="col-span-2">
+                  <Label className="text-gray-600">Fichier du certificat</Label>
+                  <div className="mt-2">
+                    <Button variant="outline" size="sm" asChild>
+                      <a 
+                        href={(declaration.certificatAccouchement as any).fichier.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        Voir le certificat
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -588,41 +914,38 @@ export default function MairieDeclarationDetail() {
           <DialogHeader>
             <DialogTitle>Générer l'Acte de Naissance</DialogTitle>
             <DialogDescription>
-              Ajoutez le timbre et le cachet numériques pour générer l'acte de naissance
+              L'acte de naissance sera généré avec toutes les informations de la déclaration. Le timbre et le cachet numérique seront générés automatiquement.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="stamp">Timbre numérique *</Label>
-              <Input
-                id="stamp"
-                type="file"
-                accept="image/*"
-                onChange={(e) => setCertificateData({
-                  ...certificateData, 
-                  timbreFile: e.target.files?.[0] || null
-                })}
-              />
-              {certificateData.timbreFile && (
-                <p className="text-sm text-green-600">✓ Timbre ajouté</p>
-              )}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-semibold text-blue-900 mb-2">Informations qui seront incluses dans l'acte :</h4>
+              <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                <li>Informations de l'enfant : {declaration?.prenomEnfant} {declaration?.nomEnfant}</li>
+                <li>Date et heure de naissance : {(() => {
+                  try {
+                    if (!declaration?.dateNaissance) return 'N/A';
+                    const date = new Date(declaration.dateNaissance);
+                    return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('fr-FR');
+                  } catch {
+                    return 'N/A';
+                  }
+                })()} à {declaration?.heureNaissance || 'N/A'}</li>
+                <li>Lieu de naissance : {declaration?.lieuNaissance || 'N/A'}</li>
+                <li>Sexe : {declaration?.sexe === 'M' ? 'Masculin' : 'Féminin'}</li>
+                <li>Père : {declaration?.prenomPere || ''} {declaration?.nomPere || ''}</li>
+                <li>Mère : {declaration?.prenomMere || ''} {declaration?.nomMere || ''}</li>
+                <li>Timbre et cachet numérique (générés automatiquement)</li>
+                <li>Numéro d'acte et numéro de registre (générés automatiquement)</li>
+              </ul>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="cachet">Cachet numérique *</Label>
-              <Input
-                id="cachet"
-                type="file"
-                accept="image/*"
-                onChange={(e) => setCertificateData({
-                  ...certificateData, 
-                  cachetFile: e.target.files?.[0] || null
-                })}
-              />
-              {certificateData.cachetFile && (
-                <p className="text-sm text-green-600">✓ Cachet ajouté</p>
-              )}
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <p className="text-sm text-yellow-800">
+                <strong>Note :</strong> Le timbre et le cachet numérique seront générés automatiquement par le système. 
+                L'acte de naissance contiendra toutes les informations de la déclaration validée.
+              </p>
             </div>
           </div>
 
@@ -645,7 +968,87 @@ export default function MairieDeclarationDetail() {
                   Génération...
                 </>
               ) : (
-                "Générer et Valider"
+                <>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Générer l'Acte
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de confirmation pour validation */}
+      <Dialog open={validateConfirmDialogOpen} onOpenChange={setValidateConfirmDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmer la validation</DialogTitle>
+            <DialogDescription>
+              Êtes-vous sûr de vouloir valider cette déclaration ? Cette action est irréversible.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setValidateConfirmDialogOpen(false)}
+              disabled={loadingAction}
+            >
+              Annuler
+            </Button>
+            <Button 
+              className="text-white"
+              style={{ backgroundColor: "#00853F" }}
+              onClick={confirmValidate}
+              disabled={loadingAction}
+            >
+              {loadingAction ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Validation...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Confirmer
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de confirmation pour archivage */}
+      <Dialog open={archiveConfirmDialogOpen} onOpenChange={setArchiveConfirmDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmer l'archivage</DialogTitle>
+            <DialogDescription>
+              Êtes-vous sûr de vouloir archiver ce dossier ? Le parent pourra alors télécharger l'acte de naissance.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setArchiveConfirmDialogOpen(false)}
+              disabled={loadingAction}
+            >
+              Annuler
+            </Button>
+            <Button 
+              variant="outline"
+              onClick={confirmArchive}
+              disabled={loadingAction}
+            >
+              {loadingAction ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Archivage...
+                </>
+              ) : (
+                <>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Confirmer
+                </>
               )}
             </Button>
           </DialogFooter>

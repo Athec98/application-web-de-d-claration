@@ -470,6 +470,149 @@ exports.resendOTP = async (req, res) => {
   }
 };
 
+// === Mot de passe oublié ===
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // Validation
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Veuillez fournir votre adresse email'
+      });
+    }
+
+    // Nettoyer l'email
+    const cleanedEmail = email.trim().toLowerCase();
+
+    // Rechercher l'utilisateur
+    const user = await User.findOne({ email: cleanedEmail });
+
+    // Pour des raisons de sécurité, ne pas révéler si l'email existe ou non
+    // Toujours retourner un succès
+    if (!user) {
+      return res.json({
+        success: true,
+        message: 'Si cette adresse email existe dans notre système, un lien de réinitialisation a été envoyé.'
+      });
+    }
+
+    // Vérifier que l'utilisateur est vérifié
+    if (!user.isVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Veuillez d\'abord vérifier votre compte en utilisant le code OTP envoyé lors de l\'inscription'
+      });
+    }
+
+    // Générer le token de réinitialisation
+    const resetToken = user.getResetPasswordToken();
+    await user.save({ validateBeforeSave: false });
+
+    // Créer l'URL de réinitialisation
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+
+    // Envoyer l'email de réinitialisation (en arrière-plan)
+    try {
+      await sendPasswordResetEmail(user.email, resetToken, resetUrl);
+    } catch (err) {
+      // Si l'envoi d'email échoue, supprimer le token
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpire = undefined;
+      await user.save({ validateBeforeSave: false });
+      
+      console.error('Erreur envoi email réinitialisation:', err);
+      return res.status(500).json({
+        success: false,
+        message: 'Erreur lors de l\'envoi de l\'email. Veuillez réessayer plus tard.'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Un email de réinitialisation a été envoyé à votre adresse email'
+    });
+  } catch (err) {
+    console.error('Erreur mot de passe oublié:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la demande de réinitialisation'
+    });
+  }
+};
+
+// === Réinitialiser le mot de passe ===
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    // Validation
+    if (!token || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token et nouveau mot de passe sont requis'
+      });
+    }
+
+    // Vérifier la longueur du mot de passe
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le mot de passe doit contenir au moins 6 caractères'
+      });
+    }
+
+    // Hasher le token pour le comparer avec celui en base
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
+
+    // Rechercher l'utilisateur avec le token valide et non expiré
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpire: { $gt: Date.now() }
+    }).select('+resetPasswordToken +resetPasswordExpire');
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token invalide ou expiré. Veuillez demander un nouveau lien de réinitialisation.'
+      });
+    }
+
+    // Mettre à jour le mot de passe
+    await user.setPassword(password);
+    
+    // Supprimer le token et la date d'expiration
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+    
+    await user.save();
+
+    // Envoyer une notification de confirmation (en arrière-plan)
+    // Note: sendPasswordResetEmail accepte maintenant un 4ème paramètre pour les notifications
+    try {
+      const notificationMessage = 'Votre mot de passe a été réinitialisé avec succès. Si vous n\'avez pas effectué cette action, veuillez contacter le support immédiatement.';
+      await sendPasswordResetEmail(user.email, null, null, notificationMessage);
+    } catch (err) {
+      console.error('Erreur envoi email confirmation réinitialisation:', err);
+    }
+
+    res.json({
+      success: true,
+      message: 'Votre mot de passe a été réinitialisé avec succès'
+    });
+  } catch (err) {
+    console.error('Erreur réinitialisation mot de passe:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la réinitialisation du mot de passe'
+    });
+  }
+};
+
 // === Changer le mot de passe ===
 exports.changePassword = async (req, res) => {
   try {

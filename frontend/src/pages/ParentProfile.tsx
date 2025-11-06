@@ -13,6 +13,8 @@ export default function ParentProfile() {
   const [, setLocation] = useLocation();
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+  const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
+  const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({});
   
   // Données utilisateur réelles depuis localStorage ou API
   const [profileData, setProfileData] = useState({
@@ -85,6 +87,34 @@ export default function ParentProfile() {
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation(); // Empêcher la validation HTML5
+    
+    // Réinitialiser les erreurs
+    const newErrors: Record<string, string> = {};
+    
+    // Validations
+    if (!profileData.firstName || profileData.firstName.trim() === "") {
+      newErrors.firstName = "Le prénom est obligatoire";
+    }
+    if (!profileData.lastName || profileData.lastName.trim() === "") {
+      newErrors.lastName = "Le nom est obligatoire";
+    }
+    if (!profileData.phoneNumber || profileData.phoneNumber.trim() === "") {
+      newErrors.phoneNumber = "Le numéro de téléphone est obligatoire";
+    } else {
+      // Validation du format sénégalais
+      const phoneRegex = /^(\+221|221)?[0-9]{9}$/;
+      if (!phoneRegex.test(profileData.phoneNumber.replace(/\s+/g, ''))) {
+        newErrors.phoneNumber = "Le numéro de téléphone doit être au format sénégalais (+221 XX XXX XX XX ou 7XXXXXXXXX)";
+      }
+    }
+    
+    setProfileErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) {
+      toast.error("Veuillez corriger les erreurs dans le formulaire");
+      return;
+    }
+    
     setLoading(true);
 
     try {
@@ -239,18 +269,50 @@ export default function ParentProfile() {
                   <Input
                     id="firstName"
                     value={profileData.firstName}
-                    onChange={(e) => setProfileData({...profileData, firstName: e.target.value})}
-                    required
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setProfileData({...profileData, firstName: value});
+                      // Validation en temps réel
+                      if (value.trim() && !/^[a-zA-ZÀ-ÿ\s'-]+$/.test(value.trim())) {
+                        setProfileErrors({...profileErrors, firstName: "Le prénom ne doit contenir que des lettres, espaces, tirets et apostrophes"});
+                      } else {
+                        setProfileErrors({...profileErrors, firstName: ""});
+                      }
+                    }}
+                    onBlur={(e) => {
+                      if (!e.target.value.trim()) {
+                        setProfileErrors({...profileErrors, firstName: "Le prénom est obligatoire"});
+                      }
+                    }}
                   />
+                  {profileErrors.firstName && (
+                    <p className="text-sm text-red-600 mt-1">{profileErrors.firstName}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="lastName">Nom *</Label>
                   <Input
                     id="lastName"
                     value={profileData.lastName}
-                    onChange={(e) => setProfileData({...profileData, lastName: e.target.value})}
-                    required
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setProfileData({...profileData, lastName: value});
+                      // Validation en temps réel
+                      if (value.trim() && !/^[a-zA-ZÀ-ÿ\s'-]+$/.test(value.trim())) {
+                        setProfileErrors({...profileErrors, lastName: "Le nom ne doit contenir que des lettres, espaces, tirets et apostrophes"});
+                      } else {
+                        setProfileErrors({...profileErrors, lastName: ""});
+                      }
+                    }}
+                    onBlur={(e) => {
+                      if (!e.target.value.trim()) {
+                        setProfileErrors({...profileErrors, lastName: "Le nom est obligatoire"});
+                      }
+                    }}
                   />
+                  {profileErrors.lastName && (
+                    <p className="text-sm text-red-600 mt-1">{profileErrors.lastName}</p>
+                  )}
                 </div>
               </div>
 
@@ -270,9 +332,30 @@ export default function ParentProfile() {
                   id="phoneNumber"
                   type="tel"
                   value={profileData.phoneNumber}
-                  onChange={(e) => setProfileData({...profileData, phoneNumber: e.target.value})}
-                  required
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setProfileData({...profileData, phoneNumber: value});
+                    // Validation en temps réel
+                    if (value.trim()) {
+                      const phoneRegex = /^(\+221|221)?[0-9]{9}$/;
+                      if (!phoneRegex.test(value.replace(/\s+/g, ''))) {
+                        setProfileErrors({...profileErrors, phoneNumber: "Le numéro de téléphone doit être au format sénégalais (+221 XX XXX XX XX ou 7XXXXXXXXX)"});
+                      } else {
+                        setProfileErrors({...profileErrors, phoneNumber: ""});
+                      }
+                    } else {
+                      setProfileErrors({...profileErrors, phoneNumber: ""});
+                    }
+                  }}
+                  onBlur={(e) => {
+                    if (!e.target.value.trim()) {
+                      setProfileErrors({...profileErrors, phoneNumber: "Le numéro de téléphone est obligatoire"});
+                    }
+                  }}
                 />
+                {profileErrors.phoneNumber && (
+                  <p className="text-sm text-red-600 mt-1">{profileErrors.phoneNumber}</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -315,9 +398,19 @@ export default function ParentProfile() {
                   id="currentPassword"
                   type="password"
                   value={passwordData.currentPassword}
-                  onChange={(e) => setPasswordData({...passwordData, currentPassword: e.target.value})}
-                  required
+                  onChange={(e) => {
+                    setPasswordData({...passwordData, currentPassword: e.target.value});
+                    setPasswordErrors({...passwordErrors, currentPassword: ""});
+                  }}
+                  onBlur={(e) => {
+                    if (!e.target.value.trim()) {
+                      setPasswordErrors({...passwordErrors, currentPassword: "Le mot de passe actuel est obligatoire"});
+                    }
+                  }}
                 />
+                {passwordErrors.currentPassword && (
+                  <p className="text-sm text-red-600 mt-1">{passwordErrors.currentPassword}</p>
+                )}
               </div>
 
               <Separator />
@@ -328,10 +421,34 @@ export default function ParentProfile() {
                   id="newPassword"
                   type="password"
                   value={passwordData.newPassword}
-                  onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
-                  placeholder="Au moins 8 caractères"
-                  required
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setPasswordData({...passwordData, newPassword: value});
+                    // Validation en temps réel
+                    if (value.trim() && value.length < 6) {
+                      setPasswordErrors({...passwordErrors, newPassword: "Le nouveau mot de passe doit contenir au moins 6 caractères"});
+                    } else {
+                      setPasswordErrors({...passwordErrors, newPassword: ""});
+                    }
+                    // Vérifier aussi la confirmation si elle existe
+                    if (passwordData.confirmPassword && value !== passwordData.confirmPassword) {
+                      setPasswordErrors({...passwordErrors, confirmPassword: "Les mots de passe ne correspondent pas"});
+                    } else if (passwordData.confirmPassword) {
+                      setPasswordErrors({...passwordErrors, confirmPassword: ""});
+                    }
+                  }}
+                  placeholder="Au moins 6 caractères"
+                  onBlur={(e) => {
+                    if (!e.target.value.trim()) {
+                      setPasswordErrors({...passwordErrors, newPassword: "Le nouveau mot de passe est obligatoire"});
+                    }
+                  }}
                 />
+                {passwordErrors.newPassword ? (
+                  <p className="text-sm text-red-600 mt-1">{passwordErrors.newPassword}</p>
+                ) : (
+                  <p className="text-xs text-gray-500">Minimum 6 caractères</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -340,9 +457,27 @@ export default function ParentProfile() {
                   id="confirmPassword"
                   type="password"
                   value={passwordData.confirmPassword}
-                  onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
-                  required
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setPasswordData({...passwordData, confirmPassword: value});
+                    // Validation en temps réel
+                    if (value.trim() && value !== passwordData.newPassword) {
+                      setPasswordErrors({...passwordErrors, confirmPassword: "Les mots de passe ne correspondent pas"});
+                    } else {
+                      setPasswordErrors({...passwordErrors, confirmPassword: ""});
+                    }
+                  }}
+                  onBlur={(e) => {
+                    if (!e.target.value.trim()) {
+                      setPasswordErrors({...passwordErrors, confirmPassword: "La confirmation du mot de passe est obligatoire"});
+                    } else if (e.target.value !== passwordData.newPassword) {
+                      setPasswordErrors({...passwordErrors, confirmPassword: "Les mots de passe ne correspondent pas"});
+                    }
+                  }}
                 />
+                {passwordErrors.confirmPassword && (
+                  <p className="text-sm text-red-600 mt-1">{passwordErrors.confirmPassword}</p>
+                )}
               </div>
 
               <div className="flex justify-end">

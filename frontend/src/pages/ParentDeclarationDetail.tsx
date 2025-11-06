@@ -4,22 +4,31 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, FileText, Download, Calendar, User, MapPin } from "lucide-react";
-import axios from "axios";
+import { ArrowLeft, FileText, Download, Calendar, User, MapPin, Edit, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { declarationService, type Declaration } from "@/services/declarationService";
+import { getFileUrl } from "@/utils/fileUtils";
 
 const getStatusBadge = (status: string) => {
-  const statusConfig = {
-    en_cours: { label: "En cours", variant: "secondary" as const, className: "" },
-    en_attente: { label: "En attente", variant: "default" as const, className: "" },
-    valide: { label: "Validé", variant: "default" as const, className: "bg-green-600" },
-    rejete: { label: "Rejeté", variant: "destructive" as const, className: "" },
+  const statusConfig: Record<string, { label: string; className: string }> = {
+    en_attente: { label: "En attente", className: "bg-yellow-500 text-white" },
+    en_cours_mairie: { label: "En cours (Mairie)", className: "bg-blue-500 text-white" },
+    en_verification_hopital: { label: "En vérification (Hôpital)", className: "bg-purple-500 text-white" },
+    certificat_valide: { label: "Certificat validé", className: "bg-green-500 text-white" },
+    certificat_rejete: { label: "Certificat rejeté", className: "bg-red-500 text-white" },
+    validee: { label: "Validée", className: "bg-green-600 text-white" },
+    rejetee: { label: "Rejetée", className: "bg-red-600 text-white" },
+    archivee: { label: "Archivée", className: "bg-gray-500 text-white" },
+    // Anciens statuts pour compatibilité
+    en_cours: { label: "En cours", className: "bg-blue-500 text-white" },
+    valide: { label: "Validé", className: "bg-green-600 text-white" },
+    rejete: { label: "Rejeté", className: "bg-red-600 text-white" },
   };
 
-  const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.en_cours;
+  const config = statusConfig[status] || statusConfig.en_attente;
   
   return (
-    <Badge variant={config.variant} className={config.className}>
+    <Badge className={config.className}>
       {config.label}
     </Badge>
   );
@@ -27,72 +36,54 @@ const getStatusBadge = (status: string) => {
 
 export default function ParentDeclarationDetail() {
   const { id } = useParams<{ id: string }>();
+  const declarationId = id;
   const [loading, setLoading] = useState(true);
-  const [declaration, setDeclaration] = useState<any>(null);
+  const [declaration, setDeclaration] = useState<Declaration | null>(null);
 
   useEffect(() => {
     const loadDeclaration = async () => {
+      if (!declarationId) {
+        console.error('ID de déclaration manquant dans l\'URL');
+        toast.error("ID de déclaration manquant dans l'URL");
+        setLoading(false);
+        setTimeout(() => {
+          window.location.href = '/dashboard';
+        }, 2000);
+        return;
+      }
+
       try {
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('token') || localStorage.getItem('auth_token');
         if (!token) {
           toast.error("Vous devez être connecté");
           window.location.href = '/login';
           return;
         }
 
-        // TODO: Remplacer par l'appel API réel
-        // const response = await axios.get(`/api/declarations/${id}`, {
-        //   headers: { 'Authorization': `Bearer ${token}` }
-        // });
-        
-        // Données simulées pour l'instant
-        await new Promise(resolve => setTimeout(resolve, 500));
-        setDeclaration({
-          id: id,
-          nomEnfant: "Fatou Diop",
-          prenomEnfant: "Fatou",
-          dateNaissance: "2024-10-20",
-          heureNaissance: "14:30",
-          lieuNaissance: "Hôpital Principal de Dakar",
-          sexe: "F",
-          poids: 3.2,
-          taille: 50,
-          nomPere: "Mamadou",
-          prenomPere: "Mamadou",
-          professionPere: "Ingénieur",
-          nationalitePere: "Sénégalaise",
-          nomMere: "Aminata",
-          prenomMere: "Aminata",
-          nomJeuneFilleMere: "Ndiaye",
-          professionMere: "Enseignante",
-          nationaliteMere: "Sénégalaise",
-          statut: "valide",
-          dateDeclaration: "2024-10-20",
-          numeroActe: "SN-2024-001234",
-          documents: [
-            { nom: "Certificat d'accouchement", url: "#", typeDocument: "certificat_accouchement" },
-            { nom: "CNI Père", url: "#", typeDocument: "id_pere" },
-            { nom: "CNI Mère", url: "#", typeDocument: "id_mere" },
-          ]
-        });
+        console.log('Chargement de la déclaration avec ID:', declarationId);
+        // Charger la déclaration depuis l'API
+        const data = await declarationService.getDeclarationById(declarationId);
+        setDeclaration(data);
       } catch (error: any) {
         console.error('Erreur chargement déclaration:', error);
-        toast.error("Erreur lors du chargement de la déclaration");
+        toast.error(error.response?.data?.message || "Erreur lors du chargement de la déclaration");
+        // Rediriger vers le tableau de bord si erreur
+        setTimeout(() => {
+          window.location.href = '/dashboard';
+        }, 2000);
       } finally {
         setLoading(false);
       }
     };
 
-    if (id) {
-      loadDeclaration();
-    }
-  }, [id]);
+    loadDeclaration();
+  }, [declarationId]);
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-senegal-green mx-auto mb-4"></div>
+          <Loader2 className="h-12 w-12 animate-spin text-senegal-green mx-auto mb-4" />
           <p className="text-gray-600">Chargement...</p>
         </div>
       </div>
@@ -129,15 +120,15 @@ export default function ParentDeclarationDetail() {
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div>
-                <h1 className="text-xl font-bold" style={{ color: "#006B32" }}>
-                  Détails de la Déclaration
+                <h1 className="text-xl font-bold text-senegal-green-dark">
+                  Consultation de la Déclaration
                 </h1>
                 <p className="text-sm text-gray-600">
-                  Numéro: {declaration.numeroActe || `#${id}`}
+                  Déclaration #{declaration._id?.slice(-8)}
                 </p>
               </div>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-4">
               {getStatusBadge(declaration.statut)}
             </div>
           </div>
@@ -145,20 +136,24 @@ export default function ParentDeclarationDetail() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
-        {/* Informations sur l'enfant */}
+      <main className="container mx-auto px-4 py-8 max-w-5xl">
+        {/* Informations de l'enfant */}
         <Card className="mb-6">
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <User className="h-5 w-5" style={{ color: "#00853F" }} />
-              <span>Informations sur l'Enfant</span>
+              <span>Informations de l'Enfant</span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <p className="text-sm text-gray-600">Nom complet</p>
-                <p className="font-semibold">{declaration.nomEnfant} {declaration.prenomEnfant}</p>
+                <p className="text-sm text-gray-600">Prénom(s)</p>
+                <p className="font-semibold">{declaration.prenomEnfant}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Nom</p>
+                <p className="font-semibold">{declaration.nomEnfant}</p>
               </div>
               <div>
                 <p className="text-sm text-gray-600">Sexe</p>
@@ -168,13 +163,21 @@ export default function ParentDeclarationDetail() {
                 <p className="text-sm text-gray-600">Date de naissance</p>
                 <p className="font-semibold flex items-center space-x-2">
                   <Calendar className="h-4 w-4" />
-                  <span>{new Date(declaration.dateNaissance).toLocaleDateString('fr-FR')}</span>
-                  {declaration.heureNaissance && (
-                    <span className="text-gray-500">à {declaration.heureNaissance}</span>
-                  )}
+                  <span>
+                    {(() => {
+                      try {
+                        if (!declaration.dateNaissance) return 'N/A';
+                        const date = new Date(declaration.dateNaissance);
+                        return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('fr-FR');
+                      } catch {
+                        return 'N/A';
+                      }
+                    })()}
+                    {declaration.heureNaissance && ` à ${declaration.heureNaissance}`}
+                  </span>
                 </p>
               </div>
-              <div>
+              <div className="col-span-2">
                 <p className="text-sm text-gray-600">Lieu de naissance</p>
                 <p className="font-semibold flex items-center space-x-2">
                   <MapPin className="h-4 w-4" />
@@ -262,7 +265,7 @@ export default function ParentDeclarationDetail() {
           </CardContent>
         </Card>
 
-        {/* Documents */}
+        {/* Documents joints */}
         {declaration.documents && declaration.documents.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
@@ -273,24 +276,31 @@ export default function ParentDeclarationDetail() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {declaration.documents.map((doc: any, index: number) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded">
-                    <div className="flex items-center space-x-2">
-                      <FileText className="h-4 w-4 text-gray-600" />
-                      <span className="font-medium">{doc.nom}</span>
+                {declaration.documents.map((doc: any, index: number) => {
+                  // Construire l'URL du document
+                  const docUrl = doc?.url || doc?.path || doc?.fichier?.url || doc?.fichier?.path;
+                  const fullUrl = getFileUrl(docUrl);
+                  
+                  return (
+                    <div key={index} className="flex items-center justify-between p-2 border rounded">
+                      <span>{doc.nom || doc.name || `Document ${index + 1}`}</span>
+                      {fullUrl && (
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={fullUrl} target="_blank" rel="noopener noreferrer">
+                            Voir
+                          </a>
+                        </Button>
+                      )}
                     </div>
-                    <Button variant="outline" size="sm">
-                      Voir
-                    </Button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
         )}
 
         {/* Informations de la déclaration */}
-        <Card>
+        <Card className="mb-6">
           <CardHeader>
             <CardTitle>Informations de la Déclaration</CardTitle>
           </CardHeader>
@@ -299,27 +309,57 @@ export default function ParentDeclarationDetail() {
               <div>
                 <p className="text-sm text-gray-600">Date de déclaration</p>
                 <p className="font-semibold">
-                  {new Date(declaration.dateDeclaration).toLocaleDateString('fr-FR')}
+                  {(() => {
+                    try {
+                      const dateValue = declaration.createdAt || declaration.dateDeclaration;
+                      if (!dateValue) return 'N/A';
+                      const date = new Date(dateValue);
+                      return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('fr-FR');
+                    } catch {
+                      return 'N/A';
+                    }
+                  })()}
                 </p>
               </div>
-              {declaration.numeroActe && (
+              {declaration.acteNaissance && (
                 <div>
                   <p className="text-sm text-gray-600">Numéro d'acte</p>
-                  <p className="font-semibold">{declaration.numeroActe}</p>
+                  <p className="font-semibold">{declaration.acteNaissance}</p>
                 </div>
               )}
             </div>
           </CardContent>
         </Card>
 
+        {/* Motif de rejet si rejetée */}
+        {declaration.statut === 'rejetee' && (declaration as any).motifRejet && (
+          <Card className="mb-6 border-red-200 bg-red-50">
+            <CardHeader>
+              <CardTitle className="text-red-800">Motif de rejet</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-red-700 mb-4">{(declaration as any).motifRejet}</p>
+              <Button 
+                variant="outline"
+                onClick={() => {
+                  window.location.href = `/edit-declaration/${declaration._id}`;
+                }}
+              >
+                <Edit className="h-4 w-4 mr-2" />
+                Modifier la déclaration
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Actions */}
-        {declaration.statut === 'valide' && (
+        {(declaration.statut === 'validee' || declaration.statut === 'archivee') && declaration.acteNaissance && (
           <div className="mt-6 flex justify-end">
             <Button 
               className="text-white"
               style={{ backgroundColor: "#00853F" }}
               onClick={() => {
-                window.location.href = `/payment?type=certificate&declarationId=${id}`;
+                window.location.href = `/payment?acteId=${declaration.acteNaissance}`;
               }}
             >
               <Download className="h-4 w-4 mr-2" />
@@ -339,5 +379,3 @@ export default function ParentDeclarationDetail() {
     </div>
   );
 }
-
-

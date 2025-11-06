@@ -2,7 +2,7 @@ import { COOKIE_NAME, ONE_YEAR_MS } from './shared/const';
 
 export { COOKIE_NAME, ONE_YEAR_MS };
 
-export const APP_TITLE = 'État Civil Sénégal';
+export const APP_TITLE = 'CIVILE-APP';
 
 export const APP_LOGO = '/public/armoiries-senegal.png';
 

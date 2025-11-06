@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { authService } from "@/services/authService";
+import { isValidName, isValidAddress, isValidEmail, isValidSenegalesePhone } from "@/utils/validation";
 
 export default function Register() {
   const navigate = useNavigate();
@@ -22,24 +23,115 @@ export default function Register() {
   });
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fieldName = e.target.name;
+    const value = e.target.value;
+    
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [fieldName]: value,
     });
+
+    // Validation en temps réel
+    let error = '';
+    
+    if (fieldName === 'firstName' || fieldName === 'lastName') {
+      if (value.trim() && !isValidName(value)) {
+        error = `${fieldName === 'firstName' ? 'Le prénom' : 'Le nom'} ne doit contenir que des lettres, espaces, tirets et apostrophes`;
+      }
+    } else if (fieldName === 'phone') {
+      if (value.trim() && !isValidSenegalesePhone(value)) {
+        error = 'Le numéro de téléphone doit être au format sénégalais (+221 XX XXX XX XX ou 7XXXXXXXXX)';
+      }
+    } else if (fieldName === 'email') {
+      if (value.trim() && !isValidEmail(value)) {
+        error = 'L\'adresse email n\'est pas valide';
+      }
+    } else if (fieldName === 'address') {
+      if (value.trim() && !isValidAddress(value)) {
+        error = 'L\'adresse doit contenir au moins 5 caractères';
+      }
+    } else if (fieldName === 'password') {
+      if (value.trim() && value.length < 6) {
+        error = 'Le mot de passe doit contenir au moins 6 caractères';
+      }
+    } else if (fieldName === 'confirmPassword') {
+      if (value.trim() && value !== formData.password) {
+        error = 'Les mots de passe ne correspondent pas';
+      }
+    }
+
+    setFieldErrors({ ...fieldErrors, [fieldName]: error });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation(); // Empêcher la validation HTML5
 
-    if (formData.password !== formData.confirmPassword) {
-      toast.error("Les mots de passe ne correspondent pas");
-      return;
+    // Réinitialiser les erreurs de champ
+    const newFieldErrors: Record<string, string> = {};
+    const errors: string[] = [];
+
+    // Validation des champs obligatoires
+    if (!formData.firstName || formData.firstName.trim() === "") {
+      newFieldErrors.firstName = "Le prénom est obligatoire";
+      errors.push("Le prénom est obligatoire");
+    } else if (!isValidName(formData.firstName)) {
+      newFieldErrors.firstName = "Le prénom ne doit contenir que des lettres, espaces, tirets et apostrophes";
+      errors.push("Le prénom ne doit contenir que des lettres, espaces, tirets et apostrophes");
+    }
+    if (!formData.lastName || formData.lastName.trim() === "") {
+      newFieldErrors.lastName = "Le nom est obligatoire";
+      errors.push("Le nom est obligatoire");
+    } else if (!isValidName(formData.lastName)) {
+      newFieldErrors.lastName = "Le nom ne doit contenir que des lettres, espaces, tirets et apostrophes";
+      errors.push("Le nom ne doit contenir que des lettres, espaces, tirets et apostrophes");
+    }
+    if (!formData.phone || formData.phone.trim() === "") {
+      newFieldErrors.phone = "Le numéro de téléphone est obligatoire";
+      errors.push("Le numéro de téléphone est obligatoire");
+    } else if (!isValidSenegalesePhone(formData.phone)) {
+      newFieldErrors.phone = "Le numéro de téléphone doit être au format sénégalais (+221 XX XXX XX XX ou 7XXXXXXXXX)";
+      errors.push("Le numéro de téléphone doit être au format sénégalais (+221 XX XXX XX XX ou 7XXXXXXXXX)");
+    }
+    if (formData.email && formData.email.trim() !== "") {
+      if (!isValidEmail(formData.email)) {
+        newFieldErrors.email = "L'adresse email n'est pas valide";
+        errors.push("L'adresse email n'est pas valide");
+      }
+    }
+    if (!formData.address || formData.address.trim() === "") {
+      newFieldErrors.address = "L'adresse est obligatoire";
+      errors.push("L'adresse est obligatoire");
+    } else if (!isValidAddress(formData.address)) {
+      newFieldErrors.address = "L'adresse doit contenir au moins 5 caractères";
+      errors.push("L'adresse doit contenir au moins 5 caractères");
+    }
+    if (!formData.password || formData.password.trim() === "") {
+      newFieldErrors.password = "Le mot de passe est obligatoire";
+      errors.push("Le mot de passe est obligatoire");
+    } else if (formData.password.length < 6) {
+      newFieldErrors.password = "Le mot de passe doit contenir au moins 6 caractères";
+      errors.push("Le mot de passe doit contenir au moins 6 caractères");
+    }
+    if (!formData.confirmPassword || formData.confirmPassword.trim() === "") {
+      newFieldErrors.confirmPassword = "La confirmation du mot de passe est obligatoire";
+      errors.push("La confirmation du mot de passe est obligatoire");
+    } else if (formData.password !== formData.confirmPassword) {
+      newFieldErrors.confirmPassword = "Les mots de passe ne correspondent pas";
+      errors.push("Les mots de passe ne correspondent pas");
+    }
+    if (!acceptTerms) {
+      errors.push("Vous devez accepter les conditions d'utilisation");
     }
 
-    if (!acceptTerms) {
-      toast.error("Vous devez accepter les conditions d'utilisation");
+    // Afficher les erreurs
+    setFieldErrors(newFieldErrors);
+    
+    if (errors.length > 0) {
+      toast.error(`Veuillez corriger les erreurs suivantes : ${errors.join(", ")}`);
       return;
     }
 
@@ -53,21 +145,15 @@ export default function Register() {
         name: `${userData.firstName} ${userData.lastName}`.trim()
       });
       
-      // Vérifier la réponse du serveur
-      console.log('Réponse complète du serveur:', response);
-      
       // Vérifier si la réponse contient des données
       if (!response || !response.data) {
-        console.error('Réponse du serveur invalide:', response);
         throw new Error("Réponse du serveur invalide. Veuillez réessayer.");
       }
       
       const responseData = response.data;
-      console.log('Données de la réponse:', responseData);
       
       // Vérifier si c'est le message indiquant que l'utilisateur existe déjà
       if (responseData.message && responseData.message.includes('Si votre email est valable')) {
-        console.log('L\'utilisateur existe déjà, redirection vers la page de connexion');
         toast.info('Un compte existe déjà avec cet email. Veuillez vous connecter.');
         navigate('/login');
         return;
@@ -79,21 +165,16 @@ export default function Register() {
                    responseData.user?.id ||
                    (responseData.user && responseData.user.id);
       
-      console.log('ID utilisateur extrait:', userId);
-      
       if (!userId) {
-        console.error('ID utilisateur manquant dans la réponse:', responseData);
         throw new Error("Erreur lors de la création du compte. Veuillez réessayer ou contacter le support.");
       }
       
       // Stocker l'ID dans le localStorage
       localStorage.setItem('tempUserId', userId);
-      console.log('ID utilisateur stocké dans le localStorage:', userId);
       
       toast.success("Inscription réussie ! Vérifiez votre email pour le code OTP.");
       navigate('/verify-otp');
     } catch (error: any) {
-      console.error('Erreur inscription:', error);
       const errorMessage = error.response?.data?.message || 
                          error.message || 
                          "Erreur lors de l'inscription";
@@ -142,8 +223,15 @@ export default function Register() {
                     placeholder="Prénom"
                     value={formData.firstName}
                     onChange={handleChange}
-                    required
+                    onBlur={(e) => {
+                      if (!e.target.value.trim()) {
+                        setFieldErrors({ ...fieldErrors, firstName: 'Le prénom est obligatoire' });
+                      }
+                    }}
                   />
+                  {fieldErrors.firstName && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.firstName}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="lastName">Nom *</Label>
@@ -154,8 +242,15 @@ export default function Register() {
                     placeholder="Nom"
                     value={formData.lastName}
                     onChange={handleChange}
-                    required
+                    onBlur={(e) => {
+                      if (!e.target.value.trim()) {
+                        setFieldErrors({ ...fieldErrors, lastName: 'Le nom est obligatoire' });
+                      }
+                    }}
                   />
+                  {fieldErrors.lastName && (
+                    <p className="text-sm text-red-600 mt-1">{fieldErrors.lastName}</p>
+                  )}
                 </div>
               </div>
 
@@ -168,8 +263,15 @@ export default function Register() {
                   placeholder="+221 XX XXX XX XX"
                   value={formData.phone}
                   onChange={handleChange}
-                  required
+                  onBlur={(e) => {
+                    if (!e.target.value.trim()) {
+                      setFieldErrors({ ...fieldErrors, phone: 'Le numéro de téléphone est obligatoire' });
+                    }
+                  }}
                 />
+                {fieldErrors.phone && (
+                  <p className="text-sm text-red-600 mt-1">{fieldErrors.phone}</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -182,6 +284,9 @@ export default function Register() {
                   value={formData.email}
                   onChange={handleChange}
                 />
+                {fieldErrors.email && (
+                  <p className="text-sm text-red-600 mt-1">{fieldErrors.email}</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -193,8 +298,15 @@ export default function Register() {
                   placeholder="Votre adresse complète"
                   value={formData.address}
                   onChange={handleChange}
-                  required
+                  onBlur={(e) => {
+                    if (!e.target.value.trim()) {
+                      setFieldErrors({ ...fieldErrors, address: 'L\'adresse est obligatoire' });
+                    }
+                  }}
                 />
+                {fieldErrors.address && (
+                  <p className="text-sm text-red-600 mt-1">{fieldErrors.address}</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -206,12 +318,19 @@ export default function Register() {
                   placeholder="••••••••"
                   value={formData.password}
                   onChange={handleChange}
-                  required
-                  minLength={6}
+                  onBlur={(e) => {
+                    if (!e.target.value.trim()) {
+                      setFieldErrors({ ...fieldErrors, password: 'Le mot de passe est obligatoire' });
+                    }
+                  }}
                 />
-                <p className="text-xs text-gray-500">
-                  Minimum 6 caractères
-                </p>
+                {fieldErrors.password ? (
+                  <p className="text-sm text-red-600 mt-1">{fieldErrors.password}</p>
+                ) : (
+                  <p className="text-xs text-gray-500">
+                    Minimum 6 caractères
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -223,8 +342,17 @@ export default function Register() {
                   placeholder="••••••••"
                   value={formData.confirmPassword}
                   onChange={handleChange}
-                  required
+                  onBlur={(e) => {
+                    if (!e.target.value.trim()) {
+                      setFieldErrors({ ...fieldErrors, confirmPassword: 'La confirmation du mot de passe est obligatoire' });
+                    } else if (e.target.value !== formData.password) {
+                      setFieldErrors({ ...fieldErrors, confirmPassword: 'Les mots de passe ne correspondent pas' });
+                    }
+                  }}
                 />
+                {fieldErrors.confirmPassword && (
+                  <p className="text-sm text-red-600 mt-1">{fieldErrors.confirmPassword}</p>
+                )}
               </div>
 
               <div className="flex items-center space-x-2">

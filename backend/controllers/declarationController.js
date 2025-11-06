@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Declaration = require('../models/Declaration');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
@@ -106,18 +107,102 @@ exports.createDeclaration = async (req, res) => {
       });
     }
 
+    // Parser les données JSON si elles sont envoyées comme strings (FormData)
+    let certificatAccouchement = req.body.certificatAccouchement;
+    if (typeof certificatAccouchement === 'string') {
+      try {
+        certificatAccouchement = JSON.parse(certificatAccouchement);
+      } catch (e) {
+        // Si ce n'est pas du JSON valide, garder la valeur originale
+      }
+    }
+
+    let hopitalAutre = req.body.hopitalAutre;
+    if (typeof hopitalAutre === 'string' && hopitalAutre) {
+      try {
+        hopitalAutre = JSON.parse(hopitalAutre);
+      } catch (e) {
+        // Si ce n'est pas du JSON valide, garder la valeur originale
+      }
+    }
+
     // Préparer les données de la déclaration
     const declarationData = {
       ...req.body,
+      certificatAccouchement: certificatAccouchement,
+      hopitalAutre: hopitalAutre,
       user: req.user.id,
       statut: 'en_cours_mairie', // Statut initial : en cours de traitement par la mairie
-      dateEnvoiMairie: new Date()
+      dateEnvoiMairie: new Date(),
+      // createdAt sera automatiquement ajouté par Mongoose avec timestamps: true dans le modèle
     };
 
     // Lier le certificat d'accouchement à l'hôpital si c'est dans la base
     if (declarationData.hopitalAccouchement) {
       declarationData.certificatAccouchement = declarationData.certificatAccouchement || {};
       declarationData.certificatAccouchement.hopitalDelivrant = declarationData.hopitalAccouchement;
+    }
+
+    // Traiter les fichiers uploadés
+    const documents = [];
+    if (req.files) {
+      // Traiter le certificat d'accouchement
+      if (req.files.certificatAccouchement && req.files.certificatAccouchement[0]) {
+        const file = req.files.certificatAccouchement[0];
+        documents.push({
+          nom: file.originalname,
+          url: `/uploads/documents/${file.filename}`,
+          typeDocument: 'certificat_accouchement',
+          uploadedAt: new Date()
+        });
+        // Ajouter le fichier au certificat d'accouchement
+        if (!declarationData.certificatAccouchement) {
+          declarationData.certificatAccouchement = {};
+        }
+        declarationData.certificatAccouchement.fichier = {
+          nom: file.originalname,
+          url: `/uploads/documents/${file.filename}`
+        };
+      }
+
+      // Traiter la pièce d'identité du père
+      if (req.files.idPere && req.files.idPere[0]) {
+        const file = req.files.idPere[0];
+        documents.push({
+          nom: `Pièce d'identité du père - ${file.originalname}`,
+          url: `/uploads/documents/${file.filename}`,
+          typeDocument: 'id_pere',
+          uploadedAt: new Date()
+        });
+      }
+
+      // Traiter la pièce d'identité de la mère
+      if (req.files.idMere && req.files.idMere[0]) {
+        const file = req.files.idMere[0];
+        documents.push({
+          nom: `Pièce d'identité de la mère - ${file.originalname}`,
+          url: `/uploads/documents/${file.filename}`,
+          typeDocument: 'id_mere',
+          uploadedAt: new Date()
+        });
+      }
+
+      // Traiter les autres documents
+      if (req.files.autres && req.files.autres.length > 0) {
+        req.files.autres.forEach((file) => {
+          documents.push({
+            nom: file.originalname,
+            url: `/uploads/documents/${file.filename}`,
+            typeDocument: 'autre',
+            uploadedAt: new Date()
+          });
+        });
+      }
+    }
+
+    // Ajouter les documents à la déclaration
+    if (documents.length > 0) {
+      declarationData.documents = documents;
     }
 
     // Créer la déclaration
@@ -171,6 +256,162 @@ exports.createDeclaration = async (req, res) => {
   }
 };
 
+// @desc    Obtenir toutes les déclarations d'un parent
+// @route   GET /api/declarations/my-declarations
+// @access  Private (Parent)
+exports.getMyDeclarations = async (req, res) => {
+  try {
+    if (req.user.role !== 'parent') {
+      return res.status(403).json({
+        success: false,
+        message: 'Accès réservé aux parents'
+      });
+    }
+
+    // Normaliser l'ID utilisateur
+    const userId = req.user.id?.toString ? req.user.id.toString() : req.user.id;
+    if (!userId || userId === 'undefined' || userId === '[object Object]') {
+      return res.status(400).json({
+        success: false,
+        message: 'ID utilisateur invalide'
+      });
+    }
+
+    // Vérifier que l'ID est un ObjectId valide
+    if (!require('mongoose').Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID utilisateur invalide (format incorrect)'
+      });
+    }
+
+    // Récupérer les déclarations avec populate sécurisé
+    // Utiliser try-catch pour chaque populate pour éviter les erreurs
+    let declarations;
+    try {
+      declarations = await Declaration.find({ user: userId })
+        .populate({
+          path: 'region',
+          select: 'nom code',
+          strictPopulate: false
+        })
+        .populate({
+          path: 'departement',
+          select: 'nom code',
+          strictPopulate: false
+        })
+        .populate({
+          path: 'commune',
+          select: 'nom code',
+          strictPopulate: false
+        })
+        .populate({
+          path: 'communauteRurale',
+          select: 'nom code',
+          strictPopulate: false
+        })
+        .populate({
+          path: 'user',
+          select: 'name firstName lastName email phone',
+          strictPopulate: false
+        })
+        .populate({
+          path: 'mairie',
+          select: 'nom adresse telephone email',
+          strictPopulate: false
+        })
+        .populate({
+          path: 'hopitalAccouchement',
+          select: 'nom type adresse telephone email',
+          strictPopulate: false
+        })
+        .populate({
+          path: 'hopitalAssigne',
+          select: 'nom type adresse telephone email',
+          strictPopulate: false
+        })
+        .sort({ createdAt: -1 })
+        .lean();
+    } catch (populateError) {
+      console.error('Erreur lors du populate des déclarations:', populateError);
+      // Essayer sans populate si le populate échoue
+      declarations = await Declaration.find({ user: userId })
+        .sort({ createdAt: -1 })
+        .lean();
+    }
+
+    // S'assurer que chaque déclaration a un _id (même si le modèle le transforme en id)
+    const normalizedDeclarations = declarations.map(decl => {
+      try {
+        const result = { ...decl };
+        // Si le modèle a transformé _id en id, remettre _id
+        if (result.id && !result._id) {
+          result._id = result.id;
+        }
+        // Si _id est un ObjectId, le convertir en string
+        if (result._id && typeof result._id === 'object' && result._id.toString) {
+          result._id = result._id.toString();
+        }
+        // Normaliser les IDs des références populées
+        if (result.user && typeof result.user === 'object' && result.user._id) {
+          result.user = {
+            ...result.user,
+            _id: result.user._id.toString ? result.user._id.toString() : result.user._id
+          };
+        }
+        // Normaliser les autres références
+        if (result.region && typeof result.region === 'object' && result.region._id) {
+          result.region = {
+            ...result.region,
+            _id: result.region._id.toString ? result.region._id.toString() : result.region._id
+          };
+        }
+        if (result.departement && typeof result.departement === 'object' && result.departement._id) {
+          result.departement = {
+            ...result.departement,
+            _id: result.departement._id.toString ? result.departement._id.toString() : result.departement._id
+          };
+        }
+        if (result.mairie && typeof result.mairie === 'object' && result.mairie._id) {
+          result.mairie = {
+            ...result.mairie,
+            _id: result.mairie._id.toString ? result.mairie._id.toString() : result.mairie._id
+          };
+        }
+        return result;
+      } catch (mapError) {
+        console.error('Erreur lors de la normalisation d\'une déclaration:', mapError);
+        // En cas d'erreur, retourner la déclaration avec au moins l'_id normalisé
+        try {
+          const fallback = { ...decl };
+          if (fallback._id && typeof fallback._id === 'object' && fallback._id.toString) {
+            fallback._id = fallback._id.toString();
+          }
+          return fallback;
+        } catch {
+          return decl; // Retourner la déclaration originale en dernier recours
+        }
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      count: normalizedDeclarations.length,
+      data: normalizedDeclarations
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des déclarations:', error);
+    console.error('Stack trace:', error.stack);
+    console.error('User ID:', req.user?.id);
+    console.error('User role:', req.user?.role);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la récupération des déclarations',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 // @desc    Obtenir toutes les déclarations (selon le rôle)
 // @route   GET /api/declarations
 // @access  Private
@@ -183,7 +424,29 @@ exports.getDeclarations = async (req, res) => {
     if (req.user.role === 'parent') {
       query.user = req.user.id;
     } else if (req.user.role === 'mairie') {
-      query.statut = { $in: ['en_cours_mairie', 'en_verification_hopital', 'certificat_valide', 'certificat_rejete'] };
+      // La mairie doit voir TOUTES les déclarations qui lui sont destinées
+      // Inclure tous les statuts pertinents pour la mairie
+      query.statut = { 
+        $in: [
+          'en_attente',           // Nouvelles déclarations
+          'en_cours_mairie',      // En cours de traitement par la mairie
+          'en_verification_hopital', // En attente de vérification par l'hôpital
+          'certificat_valide',    // Certificat validé par l'hôpital
+          'certificat_rejete',    // Certificat rejeté par l'hôpital
+          'validee',              // Déclaration validée par la mairie
+          'rejetee',              // Déclaration rejetée par la mairie
+          'archivee',             // Déclaration archivée
+          // Anciens statuts pour compatibilité
+          'en_cours',
+          'valide',
+          'rejete'
+        ] 
+      };
+      
+      // Si l'utilisateur est associé à une mairie spécifique, filtrer par cette mairie
+      if (req.user.mairieAffiliee) {
+        query.mairie = req.user.mairieAffiliee;
+      }
     } else if (req.user.role === 'hopital') {
       query.statut = { $in: ['en_verification_hopital'] };
       // Si un hôpital est assigné, filtrer par hôpital assigné
@@ -194,7 +457,7 @@ exports.getDeclarations = async (req, res) => {
 
     const declarations = await Declaration.find(query)
       .populate('region departement commune communauteRurale user mairie hopitalAccouchement hopitalAssigne')
-      .sort(sort);
+      .sort({ createdAt: -1, dateDeclaration: -1 }); // Trier par date de création (plus récent en premier)
 
     res.json({
       success: true,
@@ -211,11 +474,137 @@ exports.getDeclarations = async (req, res) => {
   }
 };
 
+// @desc    Obtenir les demandes de vérification pour l'hôpital
+// @route   GET /api/declarations/hopital/verifications
+// @access  Private (Hôpital)
+exports.getVerificationRequests = async (req, res) => {
+  try {
+    if (req.user.role !== 'hopital') {
+      return res.status(403).json({
+        success: false,
+        message: 'Accès réservé aux agents hôpital'
+      });
+    }
+
+    let query = {
+      statut: 'en_verification_hopital'
+    };
+
+    // Filtrer par hôpital assigné si l'utilisateur a un hôpital affilié
+    if (req.user.hopitalAffilie) {
+      query.hopitalAssigne = req.user.hopitalAffilie;
+    }
+
+    console.log('Requête getVerificationRequests:', {
+      userId: req.user.id,
+      userRole: req.user.role,
+      hopitalAffilie: req.user.hopitalAffilie,
+      query
+    });
+
+    const declarations = await Declaration.find(query)
+      .populate('region departement commune communauteRurale user mairie hopitalAccouchement hopitalAssigne')
+      .sort({ dateEnvoiHopital: -1, createdAt: -1 })
+      .lean();
+
+    // Normaliser les IDs
+    const normalizedDeclarations = declarations.map((decl) => {
+      const result = { ...decl };
+      if (result.id && !result._id) {
+        result._id = result.id;
+      }
+      if (result._id && typeof result._id === 'object' && result._id.toString) {
+        result._id = result._id.toString();
+      }
+      return result;
+    });
+
+    console.log(`Nombre de demandes de vérification trouvées: ${normalizedDeclarations.length}`);
+
+    res.status(200).json({
+      success: true,
+      count: normalizedDeclarations.length,
+      data: normalizedDeclarations
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des demandes de vérification:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la récupération des demandes de vérification',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Obtenir toutes les déclarations traitées par l'hôpital (pour statistiques)
+// @route   GET /api/declarations/hopital/all
+// @access  Private (Hôpital)
+exports.getAllHospitalDeclarations = async (req, res) => {
+  try {
+    if (req.user.role !== 'hopital') {
+      return res.status(403).json({
+        success: false,
+        message: 'Accès réservé aux agents hôpital'
+      });
+    }
+
+    // Récupérer toutes les déclarations qui ont été traitées par cet hôpital
+    // Cela inclut les déclarations en attente, validées et rejetées
+    let query = {
+      statut: { $in: ['en_verification_hopital', 'certificat_valide', 'certificat_rejete'] }
+    };
+
+    // Filtrer par hôpital assigné si l'utilisateur a un hôpital affilié
+    if (req.user.hopitalAffilie) {
+      query.hopitalAssigne = req.user.hopitalAffilie;
+    }
+
+    const declarations = await Declaration.find(query)
+      .populate('region departement commune communauteRurale user mairie hopitalAccouchement hopitalAssigne')
+      .sort({ dateEnvoiHopital: -1, createdAt: -1 })
+      .lean();
+
+    // Normaliser les IDs
+    const normalizedDeclarations = declarations.map((decl) => {
+      const result = { ...decl };
+      if (result.id && !result._id) {
+        result._id = result.id;
+      }
+      if (result._id && typeof result._id === 'object' && result._id.toString) {
+        result._id = result._id.toString();
+      }
+      return result;
+    });
+
+    res.status(200).json({
+      success: true,
+      count: normalizedDeclarations.length,
+      data: normalizedDeclarations
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération de toutes les déclarations de l\'hôpital:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la récupération des déclarations',
+      error: error.message
+    });
+  }
+};
+
 // @desc    Obtenir une déclaration par ID
 // @route   GET /api/declarations/:id
 // @access  Private
 exports.getDeclarationById = async (req, res) => {
   try {
+    // Vérifier que l'ID est un ObjectId valide
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      console.error(`ID invalide reçu: "${req.params.id}"`);
+      return res.status(400).json({
+        success: false,
+        message: 'ID de déclaration invalide. Format attendu: ObjectId MongoDB (24 caractères hexadécimaux)'
+      });
+    }
+
     const declaration = await Declaration.findById(req.params.id)
       .populate('region departement commune communauteRurale user mairie hopitalAccouchement hopitalAssigne');
 
@@ -227,10 +616,48 @@ exports.getDeclarationById = async (req, res) => {
     }
 
     // Vérifier les permissions
-    if (req.user.role === 'parent' && declaration.user.toString() !== req.user.id) {
+    // Normaliser les IDs pour la comparaison
+    let declarationUserId;
+    
+    // Le modèle utilise 'user' (pas 'parentId')
+    if (declaration.user) {
+      if (typeof declaration.user === 'object' && declaration.user._id) {
+        // Si user est populé (objet), utiliser _id
+        declarationUserId = declaration.user._id.toString();
+      } else if (typeof declaration.user === 'object' && declaration.user.toString) {
+        // Si user est un ObjectId
+        declarationUserId = declaration.user.toString();
+      } else {
+        // Si user est déjà une string
+        declarationUserId = declaration.user;
+      }
+    }
+    
+    const currentUserId = req.user._id 
+      ? req.user._id.toString() 
+      : (req.user.id?.toString ? req.user.id.toString() : req.user.id);
+    
+    console.log('Vérification permissions (backend):', {
+      role: req.user.role,
+      declarationUserId,
+      currentUserId,
+      match: declarationUserId === currentUserId,
+      declarationUser: declaration.user,
+      declarationUserType: typeof declaration.user,
+      reqUserId: req.user.id || req.user._id,
+      reqUserIdType: typeof (req.user.id || req.user._id)
+    });
+    
+    if (req.user.role === 'parent' && declarationUserId && declarationUserId !== currentUserId) {
+      console.error('Accès refusé pour parent:', {
+        declarationUserId,
+        currentUserId,
+        declarationUser: declaration.user,
+        reqUser: req.user
+      });
       return res.status(403).json({
         success: false,
-        message: 'Non autorisé'
+        message: 'Non autorisé - Vous ne pouvez accéder qu\'à vos propres déclarations'
       });
     }
 
@@ -447,9 +874,10 @@ exports.rejectDeclaration = async (req, res) => {
       });
     }
 
-    const { motifRejet } = req.body;
+    const { motifRejet, motifRejetHopital, comment, rejectionReason } = req.body;
+    const motifRejetFinal = motifRejet || motifRejetHopital || comment || rejectionReason;
 
-    if (!motifRejet) {
+    if (!motifRejetFinal) {
       return res.status(400).json({
         success: false,
         message: 'Le motif de rejet est requis'
@@ -473,7 +901,7 @@ exports.rejectDeclaration = async (req, res) => {
     }
 
     declaration.statut = 'rejetee';
-    declaration.motifRejet = motifRejet;
+    declaration.motifRejet = motifRejetFinal;
     declaration.dateRejet = new Date();
     declaration.traiteeParMairie = req.user.id;
     await declaration.save();
@@ -483,7 +911,7 @@ exports.rejectDeclaration = async (req, res) => {
       declaration.user,
       'declaration_rejetee',
       'Déclaration rejetée',
-      `Votre déclaration pour ${declaration.prenomEnfant} ${declaration.nomEnfant} a été rejetée. Motif: ${motifRejet}`,
+      `Votre déclaration pour ${declaration.prenomEnfant} ${declaration.nomEnfant} a été rejetée. Motif: ${motifRejetFinal}`,
       declaration._id
     );
 
@@ -507,6 +935,14 @@ exports.rejectDeclaration = async (req, res) => {
 // @access  Private (Hôpital)
 exports.validateCertificate = async (req, res) => {
   try {
+    // Vérifier que l'ID est un ObjectId valide
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID de déclaration invalide'
+      });
+    }
+
     const declaration = await Declaration.findById(req.params.id);
 
     if (!declaration) {
@@ -664,6 +1100,371 @@ exports.rejectCertificate = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erreur serveur',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Mairie : Valider une déclaration (après validation du certificat par l'hôpital)
+// @route   PUT /api/declarations/:id/validate
+// @access  Private (Mairie)
+exports.validateDeclaration = async (req, res) => {
+  try {
+    // Vérifier que l'ID est un ObjectId valide
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID de déclaration invalide'
+      });
+    }
+
+    const declaration = await Declaration.findById(req.params.id);
+
+    if (!declaration) {
+      return res.status(404).json({
+        success: false,
+        message: 'Déclaration non trouvée'
+      });
+    }
+
+    if (req.user.role !== 'mairie') {
+      return res.status(403).json({
+        success: false,
+        message: 'Seuls les agents mairie peuvent valider une déclaration'
+      });
+    }
+
+    // Vérifier que le certificat a été validé par l'hôpital
+    if (declaration.statut !== 'certificat_valide') {
+      return res.status(400).json({
+        success: false,
+        message: 'Le certificat doit être validé par l\'hôpital avant de valider la déclaration'
+      });
+    }
+
+    // Valider la déclaration
+    declaration.statut = 'validee';
+    declaration.dateValidation = new Date();
+    declaration.traiteeParMairie = req.user.id;
+    await declaration.save();
+
+    // Notification pour le parent
+    await createNotification(
+      declaration.user,
+      'declaration_validee',
+      'Déclaration validée',
+      `Votre déclaration pour ${declaration.prenomEnfant} ${declaration.nomEnfant} a été validée. Vous pouvez maintenant générer l'acte de naissance.`,
+      declaration._id
+    );
+
+    res.json({
+      success: true,
+      message: 'Déclaration validée avec succès',
+      declaration
+    });
+  } catch (error) {
+    console.error('Erreur lors de la validation de la déclaration:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Mairie : Archiver une déclaration
+// @route   PUT /api/declarations/:id/archive
+// @access  Private (Mairie)
+exports.archiveDeclaration = async (req, res) => {
+  try {
+    // Vérifier que l'ID est un ObjectId valide
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID de déclaration invalide'
+      });
+    }
+
+    const declaration = await Declaration.findById(req.params.id);
+
+    if (!declaration) {
+      return res.status(404).json({
+        success: false,
+        message: 'Déclaration non trouvée'
+      });
+    }
+
+    if (req.user.role !== 'mairie') {
+      return res.status(403).json({
+        success: false,
+        message: 'Seuls les agents mairie peuvent archiver une déclaration'
+      });
+    }
+
+    // Vérifier que la déclaration a un acte de naissance généré
+    if (!declaration.acteNaissance) {
+      return res.status(400).json({
+        success: false,
+        message: 'Un acte de naissance doit être généré avant d\'archiver la déclaration'
+      });
+    }
+
+    // Vérifier que le statut est approprié pour l'archivage
+    if (declaration.statut !== 'validee') {
+      return res.status(400).json({
+        success: false,
+        message: 'La déclaration doit être validée avant d\'être archivée'
+      });
+    }
+
+    // Archiver la déclaration
+    declaration.statut = 'archivee';
+    await declaration.save();
+
+    // Notification pour le parent
+    await createNotification(
+      declaration.user,
+      'acte_genere',
+      'Dossier archivé',
+      `Votre dossier de déclaration de naissance pour ${declaration.prenomEnfant} ${declaration.nomEnfant} a été archivé. Vous pouvez maintenant télécharger l'acte de naissance.`,
+      declaration._id
+    );
+
+    res.json({
+      success: true,
+      message: 'Déclaration archivée avec succès',
+      declaration
+    });
+  } catch (error) {
+    console.error('Erreur lors de l\'archivage de la déclaration:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Mettre à jour une déclaration (Parent uniquement, seulement si statut "en cours")
+// @route   PUT /api/declarations/:id
+// @access  Private (Parent)
+exports.updateDeclaration = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Vérifier que l'ID est valide
+    if (!id || id === 'undefined' || id === '[object Object]' || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID de déclaration invalide'
+      });
+    }
+
+    // Vérifier que l'utilisateur est un parent
+    if (req.user.role !== 'parent') {
+      return res.status(403).json({
+        success: false,
+        message: 'Seuls les parents peuvent modifier leurs déclarations'
+      });
+    }
+
+    // Trouver la déclaration
+    const declaration = await Declaration.findById(id);
+
+    if (!declaration) {
+      return res.status(404).json({
+        success: false,
+        message: 'Déclaration non trouvée'
+      });
+    }
+
+    // Vérifier que l'utilisateur est le propriétaire de la déclaration
+    const userId = req.user.id?.toString ? req.user.id.toString() : req.user.id;
+    const declarationUserId = declaration.user?.toString ? declaration.user.toString() : declaration.user;
+    
+    if (declarationUserId !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Vous n\'êtes pas autorisé à modifier cette déclaration'
+      });
+    }
+
+    // Vérifier que le statut permet la modification
+    const allowedStatuses = ['en_attente', 'en_cours_mairie', 'en_cours'];
+    if (!allowedStatuses.includes(declaration.statut)) {
+      return res.status(400).json({
+        success: false,
+        message: `Vous ne pouvez modifier une déclaration qu'en statut "en attente" ou "en cours". Statut actuel: ${declaration.statut}`
+      });
+    }
+
+    // Parser les données JSON si elles sont envoyées comme strings (FormData)
+    let certificatAccouchement = req.body.certificatAccouchement;
+    if (typeof certificatAccouchement === 'string') {
+      try {
+        certificatAccouchement = JSON.parse(certificatAccouchement);
+      } catch (e) {
+        // Si ce n'est pas du JSON valide, garder la valeur originale
+      }
+    }
+
+    let hopitalAutre = req.body.hopitalAutre;
+    if (typeof hopitalAutre === 'string' && hopitalAutre) {
+      try {
+        hopitalAutre = JSON.parse(hopitalAutre);
+      } catch (e) {
+        // Si ce n'est pas du JSON valide, garder la valeur originale
+      }
+    }
+
+    // Préparer les données de mise à jour
+    const updateData = {
+      nomEnfant: req.body.nomEnfant,
+      prenomEnfant: req.body.prenomEnfant,
+      dateNaissance: req.body.dateNaissance,
+      heureNaissance: req.body.heureNaissance,
+      lieuNaissance: req.body.lieuNaissance,
+      sexe: req.body.sexe,
+      poids: req.body.poids,
+      taille: req.body.taille,
+      nomPere: req.body.nomPere,
+      prenomPere: req.body.prenomPere,
+      professionPere: req.body.professionPere,
+      nationalitePere: req.body.nationalitePere,
+      nomMere: req.body.nomMere,
+      prenomMere: req.body.prenomMere,
+      nomJeuneFilleMere: req.body.nomJeuneFilleMere,
+      professionMere: req.body.professionMere,
+      nationaliteMere: req.body.nationaliteMere,
+      region: req.body.region,
+      departement: req.body.departement,
+      commune: req.body.commune,
+      communauteRurale: req.body.communauteRurale,
+      mairie: req.body.mairie,
+      hopitalAccouchement: req.body.hopitalAccouchement || null,
+      hopitalAutre: hopitalAutre,
+      certificatAccouchement: certificatAccouchement
+    };
+
+    // Traiter les fichiers uploadés (ajouter aux documents existants)
+    const newDocuments = [];
+    if (req.files) {
+      // Traiter le certificat d'accouchement
+      if (req.files.certificatAccouchement && req.files.certificatAccouchement[0]) {
+        const file = req.files.certificatAccouchement[0];
+        newDocuments.push({
+          nom: file.originalname,
+          url: `/uploads/documents/${file.filename}`,
+          typeDocument: 'certificat_accouchement',
+          uploadedAt: new Date()
+        });
+        // Mettre à jour le fichier du certificat d'accouchement
+        if (!updateData.certificatAccouchement) {
+          updateData.certificatAccouchement = {};
+        }
+        updateData.certificatAccouchement.fichier = {
+          nom: file.originalname,
+          url: `/uploads/documents/${file.filename}`
+        };
+      }
+
+      // Traiter la pièce d'identité du père
+      if (req.files.idPere && req.files.idPere[0]) {
+        const file = req.files.idPere[0];
+        newDocuments.push({
+          nom: `Pièce d'identité du père - ${file.originalname}`,
+          url: `/uploads/documents/${file.filename}`,
+          typeDocument: 'id_pere',
+          uploadedAt: new Date()
+        });
+      }
+
+      // Traiter la pièce d'identité de la mère
+      if (req.files.idMere && req.files.idMere[0]) {
+        const file = req.files.idMere[0];
+        newDocuments.push({
+          nom: `Pièce d'identité de la mère - ${file.originalname}`,
+          url: `/uploads/documents/${file.filename}`,
+          typeDocument: 'id_mere',
+          uploadedAt: new Date()
+        });
+      }
+
+      // Traiter les autres documents
+      if (req.files.autres && req.files.autres.length > 0) {
+        req.files.autres.forEach((file) => {
+          newDocuments.push({
+            nom: file.originalname,
+            url: `/uploads/documents/${file.filename}`,
+            typeDocument: 'autre',
+            uploadedAt: new Date()
+          });
+        });
+      }
+    }
+
+    // Ajouter les nouveaux documents aux documents existants
+    if (newDocuments.length > 0) {
+      const existingDocuments = declaration.documents || [];
+      updateData.documents = [...existingDocuments, ...newDocuments];
+    }
+
+    // Mettre à jour la déclaration
+    const updatedDeclaration = await Declaration.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate('region departement commune communauteRurale user mairie hopitalAccouchement hopitalAssigne');
+
+    if (!updatedDeclaration) {
+      return res.status(404).json({
+        success: false,
+        message: 'Erreur lors de la mise à jour de la déclaration'
+      });
+    }
+
+    // Créer une notification pour le parent
+    await createNotification(
+      req.user.id,
+      'declaration_modifiee',
+      'Déclaration modifiée',
+      `Votre déclaration de naissance pour ${updateData.prenomEnfant} ${updateData.nomEnfant} a été modifiée avec succès`,
+      updatedDeclaration._id
+    );
+
+    // Si la mairie a changé, notifier la nouvelle mairie
+    if (updateData.mairie && updateData.mairie !== declaration.mairie?.toString()) {
+      const Mairie = require('../models/Mairie');
+      const newMairie = await Mairie.findById(updateData.mairie);
+      if (newMairie) {
+        const agentsMairie = await User.find({ 
+          role: 'mairie', 
+          isVerified: true,
+          mairieAffiliee: newMairie._id
+        });
+        
+        for (const agent of agentsMairie) {
+          await createNotification(
+            agent._id,
+            'declaration_modifiee',
+            'Déclaration modifiée',
+            `La déclaration de naissance pour ${updateData.prenomEnfant} ${updateData.nomEnfant} a été modifiée par le parent`,
+            updatedDeclaration._id
+          );
+        }
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Déclaration mise à jour avec succès',
+      declaration: updatedDeclaration
+    });
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour de la déclaration:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la mise à jour de la déclaration',
       error: error.message
     });
   }

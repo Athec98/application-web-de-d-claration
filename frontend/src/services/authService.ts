@@ -139,5 +139,32 @@ export const authService = {
   async resendOtp(userId: string) {
     const response = await axios.post(`${API_URL}/resend-otp`, { userId });
     return response.data;
+  },
+
+  async forgotPassword(email: string) {
+    try {
+      const response = await axios.post(`${API_URL}/forgot-password`, { email });
+      return response.data;
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.message || 
+                         error?.message || 
+                         'Erreur lors de la demande de réinitialisation';
+      throw new Error(errorMessage);
+    }
+  },
+
+  async resetPassword(token: string, password: string) {
+    try {
+      const response = await axios.post(`${API_URL}/reset-password`, { 
+        token, 
+        password 
+      });
+      return response.data;
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.message || 
+                         error?.message || 
+                         'Erreur lors de la réinitialisation du mot de passe';
+      throw new Error(errorMessage);
+    }
   }
 };

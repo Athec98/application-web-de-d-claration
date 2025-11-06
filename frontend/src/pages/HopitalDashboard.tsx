@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,32 +11,37 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { FileText, LogOut } from "lucide-react";
+import { FileText, LogOut, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import NotificationsPanel from "@/components/NotificationsPanel";
-
-// Données simulées
-const mockVerificationRequests = [
-  {
-    id: 1,
-    childName: "Mamadou Sall",
-    parentName: "Awa Sall",
-    birthDate: "2024-10-20",
-    requestDate: "2024-10-26",
-    certificateUrl: "/sample-certificate.pdf",
-  },
-  {
-    id: 2,
-    childName: "Aminata Ndiaye",
-    parentName: "Omar Ndiaye",
-    birthDate: "2024-10-22",
-    requestDate: "2024-10-25",
-    certificateUrl: "/sample-certificate.pdf",
-  },
-];
+import { declarationService, type Declaration } from "@/services/declarationService";
 
 export default function HopitalDashboard() {
   const [, setLocation] = useLocation();
+  const [verificationRequests, setVerificationRequests] = useState<Declaration[]>([]);
+  const [allDeclarations, setAllDeclarations] = useState<Declaration[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadVerificationRequests();
+  }, []);
+
+  const loadVerificationRequests = async () => {
+    try {
+      setLoading(true);
+      const data = await declarationService.getVerificationRequests();
+      setVerificationRequests(data);
+      
+      // Charger aussi toutes les déclarations traitées par l'hôpital pour les statistiques
+      const allDeclarations = await declarationService.getAllHospitalDeclarations();
+      setAllDeclarations(allDeclarations);
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.message || "Erreur lors du chargement des demandes de vérification";
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
 
 
   const handleLogout = () => {
@@ -66,7 +71,7 @@ export default function HopitalDashboard() {
               />
               <div>
                 <h1 className="text-xl font-bold text-senegal-green-dark">
-                  État Civil Sénégal
+                  CIVILE-APP
                 </h1>
                 <p className="text-sm text-gray-600">Espace Hôpital</p>
               </div>
@@ -101,21 +106,31 @@ export default function HopitalDashboard() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Demandes en attente</CardDescription>
-              <CardTitle className="text-3xl">{mockVerificationRequests.length}</CardTitle>
+              <CardTitle className="text-3xl">{verificationRequests.length}</CardTitle>
             </CardHeader>
           </Card>
           
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Validées aujourd'hui</CardDescription>
-              <CardTitle className="text-3xl text-green-600">0</CardTitle>
+              <CardDescription>Validées</CardDescription>
+              <CardTitle className="text-3xl text-green-600">
+                {allDeclarations.filter(d => 
+                  d.statut === 'certificat_valide' || 
+                  (d.certificatAccouchement?.authentique === true && d.statut !== 'en_verification_hopital')
+                ).length}
+              </CardTitle>
             </CardHeader>
           </Card>
           
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Rejetées aujourd'hui</CardDescription>
-              <CardTitle className="text-3xl text-red-600">0</CardTitle>
+              <CardDescription>Rejetées</CardDescription>
+              <CardTitle className="text-3xl text-red-600">
+                {allDeclarations.filter(d => 
+                  d.statut === 'certificat_rejete' || 
+                  (d.certificatAccouchement?.authentique === false && d.statut !== 'en_verification_hopital')
+                ).length}
+              </CardTitle>
             </CardHeader>
           </Card>
         </div>
@@ -129,7 +144,11 @@ export default function HopitalDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {mockVerificationRequests.length > 0 ? (
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-senegal-green" />
+              </div>
+            ) : verificationRequests.length > 0 ? (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -137,21 +156,51 @@ export default function HopitalDashboard() {
                     <TableHead>Parent</TableHead>
                     <TableHead>Date de naissance</TableHead>
                     <TableHead>Date de demande</TableHead>
+                    <TableHead>Documents</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockVerificationRequests.map((request) => (
-                    <TableRow key={request.id}>
+                  {verificationRequests.map((request) => (
+                    <TableRow key={request._id}>
                       <TableCell className="font-medium">
-                        {request.childName}
-                      </TableCell>
-                      <TableCell>{request.parentName}</TableCell>
-                      <TableCell>
-                        {new Date(request.birthDate).toLocaleDateString('fr-FR')}
+                        {request.prenomEnfant} {request.nomEnfant}
                       </TableCell>
                       <TableCell>
-                        {new Date(request.requestDate).toLocaleDateString('fr-FR')}
+                        {typeof request.user === 'object' && request.user 
+                          ? `${request.user.firstName || ''} ${request.user.lastName || ''}`.trim()
+                          : 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          try {
+                            if (!request.dateNaissance) return 'N/A';
+                            const date = new Date(request.dateNaissance);
+                            return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('fr-FR');
+                          } catch {
+                            return 'N/A';
+                          }
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          try {
+                            if (!request.createdAt) return 'N/A';
+                            const date = new Date(request.createdAt);
+                            return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('fr-FR');
+                          } catch {
+                            return 'N/A';
+                          }
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        {request.documents && request.documents.length > 0 ? (
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                            {request.documents.length} document{request.documents.length > 1 ? 's' : ''}
+                          </Badge>
+                        ) : (
+                          <span className="text-gray-400 text-sm">Aucun</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end space-x-2">
@@ -159,7 +208,7 @@ export default function HopitalDashboard() {
                             variant="outline" 
                             size="sm"
                             onClick={() => {
-                              window.location.href = `/hopital/verification/${request.id}`;
+                              window.location.href = `/hopital/verification/${request._id}`;
                             }}
                           >
                             <FileText className="h-4 w-4 mr-2" />

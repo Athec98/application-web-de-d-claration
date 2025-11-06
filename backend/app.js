@@ -11,6 +11,9 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const geographicRoutes = require('./routes/geographicRoutes');
 const mairieRoutes = require('./routes/mairieRoutes');
 const acteNaissanceRoutes = require('./routes/acteNaissanceRoutes');
+const fileRoutes = require('./routes/fileRoutes');
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./config/swagger');
 
 // Configuration de l'environnement
 dotenv.config();
@@ -76,10 +79,38 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Servir les fichiers statiques (uploads)
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Important: Servir les fichiers AVANT le middleware auditLogger pour éviter les logs inutiles
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  setHeaders: (res, filePath) => {
+    // Définir les en-têtes CORS pour les fichiers statiques
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    // Permettre la mise en cache des fichiers
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
+  }
+}));
 
 // Middleware de journalisation des accès
 app.use(auditLogger);
+
+// Documentation Swagger
+app.use('/api-docs', swaggerUi.serve);
+app.get('/api-docs', swaggerUi.setup(swaggerSpec, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'CIVILE-APP API Documentation',
+  explorer: true,
+  swaggerOptions: {
+    persistAuthorization: true,
+    displayRequestDuration: true
+  }
+}));
+
+// Route pour obtenir le JSON Swagger
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -88,12 +119,14 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/geographic', geographicRoutes);
 app.use('/api/mairies', mairieRoutes);
 app.use('/api/actes-naissance', acteNaissanceRoutes);
+app.use('/api/files', fileRoutes);
 
 // Test route
 app.get('/', (req, res) => res.json({
-  message: '🇸🇳 API État Civil Sénégal',
+  message: '🇸🇳 API CIVILE-APP',
   version: '1.0.0',
-  status: 'active'
+  status: 'active',
+  documentation: '/api-docs'
 }));
 
 // Middleware de gestion des erreurs (doit être en dernier)
@@ -101,10 +134,12 @@ app.use(errorHandler);
 
 // Port du serveur - utiliser 5000 par défaut pour correspondre au proxy
 const PORT = process.env.PORT || 5000;
+const HOST = process.env.HOST || '0.0.0.0'; // Écouter sur toutes les interfaces pour être accessible depuis le réseau
 
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
   console.log(`\n🚀 Serveur démarré sur le port ${PORT}`);
-  console.log(`📍 URL: http://localhost:${PORT}`);
+  console.log(`📍 URL locale: http://localhost:${PORT}`);
+  console.log(`🌐 URL réseau: http://${HOST === '0.0.0.0' ? '192.168.1.25' : HOST}:${PORT}`);
   console.log(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}\n`);
 });
 

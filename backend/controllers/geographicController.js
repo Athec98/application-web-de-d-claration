@@ -126,7 +126,8 @@ exports.getHopitaux = async (req, res) => {
       query.departement = departement;
     }
     if (delivreCertificat !== undefined) {
-      query.delivreCertificat = delivreCertificat === 'true';
+      // Le champ dans le modèle est delivreCertificatAccouchement
+      query.delivreCertificatAccouchement = delivreCertificat === 'true';
     }
 
     const hopitaux = await Hopital.find(query)

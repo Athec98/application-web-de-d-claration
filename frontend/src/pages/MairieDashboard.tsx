@@ -58,14 +58,23 @@ export default function MairieDashboard() {
     loadDeclarations();
   }, []);
 
+  // Recharger les déclarations toutes les 30 secondes pour mettre à jour les compteurs
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadDeclarations();
+    }, 30000); // 30 secondes
+
+    return () => clearInterval(interval);
+  }, []);
+
   const loadDeclarations = async () => {
     try {
       setLoading(true);
       const data = await declarationService.getDeclarations();
       setDeclarations(data);
     } catch (error: any) {
-      console.error("Erreur lors du chargement des déclarations:", error);
-      toast.error("Erreur lors du chargement des déclarations");
+      const errorMessage = error.response?.data?.message || "Erreur lors du chargement des déclarations";
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -88,9 +97,22 @@ export default function MairieDashboard() {
 
   const stats = {
     total: declarations.length,
-    enCours: declarations.filter(d => d.statut === 'en_cours_mairie' || d.statut === 'en_cours').length,
+    enCours: declarations.filter(d => 
+      d.statut === 'en_cours_mairie' || 
+      d.statut === 'en_cours' || 
+      d.statut === 'en_verification_hopital'
+    ).length,
     enAttente: declarations.filter(d => d.statut === 'en_attente').length,
-    valide: declarations.filter(d => d.statut === 'validee' || d.statut === 'valide').length,
+    valide: declarations.filter(d => 
+      d.statut === 'validee' || 
+      d.statut === 'valide' || 
+      d.statut === 'certificat_valide'
+    ).length,
+    rejete: declarations.filter(d => 
+      d.statut === 'rejetee' || 
+      d.statut === 'rejete' || 
+      d.statut === 'certificat_rejete'
+    ).length,
   };
 
   return (
@@ -107,7 +129,7 @@ export default function MairieDashboard() {
               />
               <div>
                 <h1 className="text-xl font-bold text-senegal-green-dark">
-                  État Civil Sénégal
+                  CIVILE-APP
                 </h1>
                 <p className="text-sm text-gray-600">Espace Mairie</p>
               </div>
@@ -138,7 +160,7 @@ export default function MairieDashboard() {
         </div>
 
         {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Total des déclarations</CardDescription>
@@ -163,7 +185,14 @@ export default function MairieDashboard() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Validées</CardDescription>
-              <CardTitle className="text-3xl">{stats.valide}</CardTitle>
+              <CardTitle className="text-3xl text-green-600">{stats.valide}</CardTitle>
+            </CardHeader>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Rejetées</CardDescription>
+              <CardTitle className="text-3xl text-red-600">{stats.rejete}</CardTitle>
             </CardHeader>
           </Card>
         </div>
@@ -214,6 +243,7 @@ export default function MairieDashboard() {
                     <TableHead>Nom de l'enfant</TableHead>
                     <TableHead>Parent</TableHead>
                     <TableHead>Date de soumission</TableHead>
+                    <TableHead>Documents</TableHead>
                     <TableHead>Statut</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -230,7 +260,24 @@ export default function MairieDashboard() {
                           : 'N/A'}
                       </TableCell>
                       <TableCell>
-                        {new Date(declaration.createdAt).toLocaleDateString('fr-FR')}
+                        {(() => {
+                          try {
+                            if (!declaration.createdAt) return 'N/A';
+                            const date = new Date(declaration.createdAt);
+                            return isNaN(date.getTime()) ? 'N/A' : date.toLocaleDateString('fr-FR');
+                          } catch {
+                            return 'N/A';
+                          }
+                        })()}
+                      </TableCell>
+                      <TableCell>
+                        {declaration.documents && declaration.documents.length > 0 ? (
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                            {declaration.documents.length} document{declaration.documents.length > 1 ? 's' : ''}
+                          </Badge>
+                        ) : (
+                          <span className="text-gray-400 text-sm">Aucun</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {getStatusBadge(declaration.statut)}
@@ -240,8 +287,13 @@ export default function MairieDashboard() {
                           variant="outline" 
                           size="sm"
                           onClick={() => {
+                            if (!declaration._id) {
+                              toast.error("Erreur: ID de déclaration manquant");
+                              return;
+                            }
                             window.location.href = `/mairie/declaration/${declaration._id}`;
                           }}
+                          disabled={!declaration._id}
                         >
                           <FileText className="h-4 w-4 mr-2" />
                           Consulter
