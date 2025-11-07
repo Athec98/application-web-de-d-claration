@@ -42,6 +42,7 @@ const corsOptions = {
     
     // Autoriser tous les domaines Vercel
     if (origin.includes('vercel.app') || origin.includes('vercel.com')) {
+      console.log(`✅ Origine Vercel autorisée: ${origin}`);
       return callback(null, true);
     }
     
