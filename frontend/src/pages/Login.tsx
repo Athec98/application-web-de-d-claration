@@ -63,22 +63,35 @@ export default function Login() {
       const response = await authService.login(identifier, password);
       
       // Vérifier la réponse de connexion
+      console.log('📋 Réponse complète de connexion:', response);
+      console.log('👤 Données utilisateur:', response.user);
+      
       if (response.token && response.user) {
         // Stocker le token et les informations utilisateur
         localStorage.setItem('token', response.token);
         localStorage.setItem('user', JSON.stringify(response.user));
         
         // Récupérer le rôle depuis la réponse
-        const userRole = response.user.role as keyof typeof ROLE_REDIRECTS || ROLES.PARENT;
+        const userRole = (response.user.role?.toLowerCase() || ROLES.PARENT) as keyof typeof ROLE_REDIRECTS;
+        console.log('🎭 Rôle détecté:', userRole);
+        console.log('📁 Routes disponibles:', ROLE_REDIRECTS);
         
         toast.success("Connexion réussie !");
         
         // Obtenir l'URL de redirection en fonction du rôle
         const redirectPath = ROLE_REDIRECTS[userRole] || ROLE_REDIRECTS[ROLES.PARENT];
+        console.log('🔄 Redirection vers:', redirectPath);
         
         // Rediriger vers le tableau de bord approprié
-        window.location.href = redirectPath;
+        setTimeout(() => {
+          window.location.href = redirectPath;
+        }, 500); // Petit délai pour permettre au toast de s'afficher
       } else {
+        console.error('❌ Réponse invalide - token ou user manquant:', { 
+          hasToken: !!response.token, 
+          hasUser: !!response.user,
+          response 
+        });
         throw new Error("Réponse de connexion invalide");
       }
     } catch (error: any) {
