@@ -66,9 +66,17 @@ export function getFileUrl(docUrl: string | undefined | null): string | null {
 
   // Utiliser la route API pour servir le fichier avec l'URL complète du backend
   if (fileName) {
-    return `${apiBaseURL}/api/files/${fileName}`;
+    const finalUrl = `${apiBaseURL}/api/files/${fileName}`;
+    console.log(`📄 Construction URL fichier:`, {
+      docUrl,
+      fileName,
+      apiBaseURL,
+      finalUrl
+    });
+    return finalUrl;
   }
 
+  console.warn(`⚠️ Impossible de construire l'URL du fichier:`, docUrl);
   return null;
 }
 

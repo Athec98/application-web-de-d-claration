@@ -38,8 +38,12 @@ router.get('/:filename', async (req, res) => {
   try {
     const filename = req.params.filename;
     
+    console.log(`📁 Requête de fichier reçue: ${filename}`);
+    console.log(`📁 Origine de la requête: ${req.headers.origin || 'N/A'}`);
+    
     // Sécuriser le nom de fichier pour éviter les attaques de path traversal
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      console.error(`❌ Nom de fichier invalide (path traversal détecté): ${filename}`);
       return res.status(400).json({
         success: false,
         message: 'Nom de fichier invalide'
@@ -48,15 +52,37 @@ router.get('/:filename', async (req, res) => {
 
     // Chemin du fichier
     const filePath = path.join(__dirname, '../uploads/documents', filename);
+    console.log(`📁 Chemin complet du fichier: ${filePath}`);
+
+    // Vérifier que le dossier existe
+    const uploadsDir = path.join(__dirname, '../uploads/documents');
+    if (!fs.existsSync(uploadsDir)) {
+      console.error(`❌ Dossier uploads/documents n'existe pas: ${uploadsDir}`);
+      return res.status(500).json({
+        success: false,
+        message: 'Dossier de stockage non trouvé'
+      });
+    }
+
+    // Lister les fichiers dans le dossier (pour debug)
+    try {
+      const filesInDir = fs.readdirSync(uploadsDir);
+      console.log(`📁 Fichiers dans le dossier (${filesInDir.length} fichiers):`, filesInDir.slice(0, 5));
+    } catch (err) {
+      console.error(`❌ Erreur lors de la lecture du dossier:`, err);
+    }
 
     // Vérifier que le fichier existe
     if (!fs.existsSync(filePath)) {
-      console.error(`Fichier non trouvé: ${filePath}`);
+      console.error(`❌ Fichier non trouvé: ${filePath}`);
+      console.error(`❌ Nom de fichier demandé: ${filename}`);
       return res.status(404).json({
         success: false,
         message: 'Fichier non trouvé'
       });
     }
+
+    console.log(`✅ Fichier trouvé: ${filePath}`);
 
     // Vérifier que l'utilisateur a accès au fichier (si authentifié)
     // Si non authentifié, on autorise quand même (pour les images dans les balises img)
