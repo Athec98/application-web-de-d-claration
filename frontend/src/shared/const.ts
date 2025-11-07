@@ -4,7 +4,11 @@ export const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000; // 1 an en millisecondes
 
 export const UNAUTHED_ERR_MSG = 'Non authentifié. Veuillez vous connecter.';
 
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+// URL de l'API - Utilise la variable d'environnement ou l'URL de production par défaut
+export const API_URL = import.meta.env.VITE_API_URL || 
+  (import.meta.env.PROD 
+    ? 'https://application-web-de-d-claration.onrender.com/api' 
+    : 'http://localhost:5000');
 
 export const ROLES = {
   ADMIN: 'admin',

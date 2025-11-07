@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+// URL de l'API - Utilise la variable d'environnement ou l'URL de production par défaut
+const API_URL = import.meta.env.VITE_API_URL || 
+  (import.meta.env.PROD 
+    ? 'https://application-web-de-d-claration.onrender.com/api' 
+    : '/api');
 
 // Configuration axios avec token
 const api = axios.create({

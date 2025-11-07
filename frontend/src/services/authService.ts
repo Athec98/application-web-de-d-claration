@@ -1,6 +1,11 @@
 import axios from 'axios';
 
-const API_URL = '/api/auth';
+// URL de l'API - Utilise la variable d'environnement ou l'URL de production par défaut
+const baseAPI = import.meta.env.VITE_API_URL || 
+  (import.meta.env.PROD 
+    ? 'https://application-web-de-d-claration.onrender.com/api' 
+    : '/api');
+const API_URL = `${baseAPI}/auth`;
 
 interface RegisterData {
   firstName: string;
