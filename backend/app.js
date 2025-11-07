@@ -40,6 +40,11 @@ const corsOptions = {
       'http://127.0.0.1:3000'
     ];
     
+    // Autoriser tous les domaines Vercel
+    if (origin.includes('vercel.app') || origin.includes('vercel.com')) {
+      return callback(null, true);
+    }
+    
     // Vérifier si l'origine est dans la liste
     if (allowedOrigins.indexOf(origin) !== -1) {
       return callback(null, true);
