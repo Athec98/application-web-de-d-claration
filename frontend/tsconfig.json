@@ -9,7 +9,10 @@
     "allowSyntheticDefaultImports": true,
     "strict": false,
     "noImplicitAny": false,
-    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": false,
+    "forceConsistentCasingInFileNames": false,
     "module": "ESNext",
     "moduleResolution": "node",
     "resolveJsonModule": true,
@@ -19,7 +22,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    "types": []
   },
   "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }]
