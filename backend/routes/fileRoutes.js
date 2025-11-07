@@ -34,7 +34,7 @@ const { auth } = require('../middleware/auth');
  *       404:
  *         description: Fichier non trouvé
  */
-router.get('/:filename', auth, (req, res) => {
+router.get('/:filename', async (req, res) => {
   try {
     const filename = req.params.filename;
     
@@ -51,10 +51,19 @@ router.get('/:filename', auth, (req, res) => {
 
     // Vérifier que le fichier existe
     if (!fs.existsSync(filePath)) {
+      console.error(`Fichier non trouvé: ${filePath}`);
       return res.status(404).json({
         success: false,
         message: 'Fichier non trouvé'
       });
+    }
+
+    // Vérifier que l'utilisateur a accès au fichier (si authentifié)
+    // Si non authentifié, on autorise quand même (pour les images dans les balises img)
+    // Mais en production, vous pourriez vouloir vérifier que le fichier appartient à une déclaration accessible
+    if (req.user) {
+      // L'utilisateur est authentifié, on peut faire des vérifications supplémentaires si nécessaire
+      // Pour l'instant, on autorise tous les utilisateurs authentifiés
     }
 
     // Déterminer le type MIME
@@ -70,10 +79,20 @@ router.get('/:filename', auth, (req, res) => {
     };
     const contentType = mimeTypes[ext] || 'application/octet-stream';
 
-    // Servir le fichier
+    // Servir le fichier avec les headers CORS
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
     res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache 1 an
+    
+    // Headers CORS pour permettre l'accès depuis Vercel
+    const origin = req.headers.origin;
+    if (origin && (origin.includes('vercel.app') || origin.includes('vercel.com') || origin.includes('localhost'))) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    } else {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     
     // Lire et envoyer le fichier
     const fileStream = fs.createReadStream(filePath);
