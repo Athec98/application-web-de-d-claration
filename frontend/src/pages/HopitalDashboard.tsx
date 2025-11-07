@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,7 @@ import NotificationsPanel from "@/components/NotificationsPanel";
 import { declarationService, type Declaration } from "@/services/declarationService";
 
 export default function HopitalDashboard() {
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
   const [verificationRequests, setVerificationRequests] = useState<Declaration[]>([]);
   const [allDeclarations, setAllDeclarations] = useState<Declaration[]>([]);
   const [loading, setLoading] = useState(true);

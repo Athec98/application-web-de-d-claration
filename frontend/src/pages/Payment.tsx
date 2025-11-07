@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,7 @@ import { acteNaissanceService } from "@/services/acteNaissanceService";
 import { declarationService } from "@/services/declarationService";
 
 export default function Payment() {
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
   const searchParams = new URLSearchParams(window.location.search);
   const acteId = searchParams.get('acteId');
   const declarationId = searchParams.get('declarationId');

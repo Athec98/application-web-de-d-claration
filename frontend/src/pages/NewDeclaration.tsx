@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +12,7 @@ import { declarationService, type DeclarationData } from "@/services/declaration
 import { isValidName, isValidNumber, isValidAddress, isValidTime, isValidWeight, isValidHeight } from "@/utils/validation";
 
 export default function NewDeclaration() {
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
